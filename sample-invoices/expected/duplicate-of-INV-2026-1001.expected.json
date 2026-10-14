@@ -104,8 +104,8 @@
     "approvalChain": [],
     "approvalsRequired": 0,
     "nextApprovalLevel": null,
-    "duplicateOf": "00000000-0000-0000-0000-251798501303",
-    "decisionReason": "Duplicate of invoice 00000000-0000-0000-0000-251798501303",
+    "duplicateOf": "00000000-0000-0000-0000-770687481127",
+    "decisionReason": "Duplicate of invoice 00000000-0000-0000-0000-770687481127",
     "validationErrors": [],
     "exceptions": [
       {
@@ -113,7 +113,7 @@
         "severity": "DUPLICATE",
         "message": "Invoice INV-2026-1001 was already submitted for this vendor (status APPROVED)",
         "details": {
-          "duplicateOf": "00000000-0000-0000-0000-251798501303"
+          "duplicateOf": "00000000-0000-0000-0000-770687481127"
         }
       }
     ],

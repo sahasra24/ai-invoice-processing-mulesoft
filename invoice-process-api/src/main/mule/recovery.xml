@@ -148,7 +148,7 @@
       </http:error-response>
     </http:listener>
     <set-payload mimeType="application/json" doc:name="Health response"
-                 value="#[output application/json --- { status: 'UP', service: 'invoice-process-api', aiProvider: lower(Mule::p('AI_PROVIDER')), timestamp: now() >> 'UTC' }]"/>
+                 value="#[output application/json --- { status: 'UP', service: 'invoice-process-api', timestamp: now() >> 'UTC' }]"/>
   </flow>
 
 </mule>

@@ -7,5 +7,3 @@ internal:
   clientSecret: "![REPLACE_WITH_ENCRYPTED_VALUE]"
 mockai:
   apiKey: "![REPLACE_WITH_ENCRYPTED_VALUE]"
-anthropic:
-  apiKey: "![REPLACE_WITH_ENCRYPTED_VALUE]"

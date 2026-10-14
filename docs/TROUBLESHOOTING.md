@@ -53,11 +53,8 @@ SELECT * FROM processing_audit_logs WHERE correlation_id = '<correlationId>';
 | Symptom | Fix |
 |---|---|
 | Every upload ends EXTRACTION_FAILED with mock AI | Mock not running (`curl localhost:8090/health`) or `MOCK_AI_API_KEY` mismatch (mock returns 401, not retried) |
-| Claude: `HTTP 401` | `ANTHROPIC_API_KEY` missing/invalid. It must be an **environment variable or -D property**, not committed to YAML |
-| Claude: `HTTP 400` | Usually an unsupported/oversized file (PDF max 32 MB / 600 pages) or invalid schema change in `claude-extraction-schema.json` |
-| Claude: timeouts | Raise `ai.anthropic.timeoutMs` or lower `ai.anthropic.effort` (e.g. `low`) |
-| Claude: `REFUSAL` | The request was declined by safety classifiers; invoice goes to the recovery queue. Inspect the document |
-| Image uploads always MANUAL_REVIEW with mock AI | Expected for images that are not in `mock-services/fixtures/image-fixtures.json`; use Claude for real OCR |
+| Extraction timeouts | Raise `ai.timeoutMs` in the Process API config |
+| Image uploads always MANUAL_REVIEW with mock AI | Expected for images that are not in `mock-services/fixtures/image-fixtures.json`; a production deployment would plug in a real OCR / document-AI service |
 | Low confidence everywhere | Adjust `validation.confidenceThreshold` (default 0.85) |
 
 ## 5. Recovery queue
@@ -91,7 +88,6 @@ SELECT queue_id, invoice_id, failure_type, attempt_count, status, next_attempt_a
 |---|---|
 | `invoice.registered` | document stored |
 | `invoice.processed` | pipeline finished |
-| `ai.claude.usage` | Claude token usage |
 | `erp.post.failed` | ERP call failed |
 | `recovery.enqueued` | item queued for retry |
 | `recovery.rescheduled` | retry failed; next attempt scheduled |

@@ -55,7 +55,6 @@ Defaults in each app's `src/main/resources/config/local.yaml` work out of the bo
 
 To override a value without editing files, set an **environment variable with the same name**: `Run > Run Configurations > Mule Applications > (config) > Environment`. Common overrides:
 - `DB_PASSWORD`
-- `AI_PROVIDER=claude` together with `ANTHROPIC_API_KEY=sk-ant-...` to use real AI extraction
 - `DOCUMENT_STORAGE_DIR`, `FILE_INBOUND_DIR`, `FILE_ARCHIVE_DIR` (on Windows, for example `C:/invoice-data/...`)
 
 `config/.env.example` lists every variable.
@@ -214,23 +213,15 @@ Key component settings:
 **Input/output:** see `docs/API-REFERENCE.md` (ProcessingResult) and `sample-invoices/expected/*.expected.json`.
 **Tests:** `process-orchestration-test-suite.xml` has 10 tests: success, duplicate, invalid vendor, missing fields, AI failure, incorrect totals, low confidence, ERP failure, 401, 400.
 
-### B5. Process API: AI extraction sub-flows (mock and Claude)
+### B5. Process API: AI extraction sub-flow
 
 **`ai-extraction-mock-sub-flow`**
 - **Try > Until Successful** (`maxRetries=${ai.retry.maxRetries}`, `millisBetweenRetries=${ai.retry.intervalMs}`) > HTTP Request `POST /ai/v1/extract` with `Authorization: Bearer <MOCK_AI_API_KEY>`.
 - Response validator `200..299,400..499`: permanent errors are not retried.
 - The error handler uses **On Error Propagate** containing **Raise Error** `APP:AI_EXTRACTION_FAILED`. This maps any technical failure to one business error type.
 
-**`ai-extraction-claude-sub-flow`**
-1. Set Variable `claudeSchema = readUrl("classpath://schemas/claude-extraction-schema.json")`.
-2. Transform `claude-request.dwl`. The PDF goes in a `document` block and images in an `image` block, with:
-   - `output_config.format = { type: "json_schema", schema }`
-   - `fallbacks: "default"`
-   - `model: ${ANTHROPIC_MODEL}` (default `claude-opus-5-5`)
-3. HTTP Request to `https://api.anthropic.com/v1/messages` with headers `x-api-key`, `anthropic-version: 2023-06-01` and `anthropic-beta: server-side-fallback-2026-07-01`. Validator `200..299,400..428,430..499`, so 429, 5xx and 529 are retried.
-4. Transform `claude-response.dwl`. It checks `stop_reason` (`refusal`, `max_tokens`) before reading the first `text` block, then parses the JSON.
 
-Both providers return the same envelope, `{provider, model, warnings, extraction}`. That's why everything downstream is provider-agnostic.
+The sub-flow returns a provider-neutral envelope, `{provider, model, warnings, extraction}`, so everything downstream is provider-agnostic. To plug in a commercial OCR or document-AI service, replace only the HTTP request and map its response to this envelope.
 
 ### B6. Process API: `process-invoice-decision-flow` (approvals, Object Store)
 
@@ -328,7 +319,7 @@ Both providers return the same envelope, `{provider, model, warnings, extraction
 ### B11. Interview talking points
 
 - **Why three APIs?** Reuse and change isolation. A new mobile channel only needs a new Experience API, and replacing MySQL or the ERP only touches the System API.
-- **Where is the business logic?** In 13 small, pure DataWeave scripts. They're testable with the DataWeave CLI and MUnit, and reviewers can read the rules in one place.
+- **Where is the business logic?** In 12 small, pure DataWeave scripts. They're testable with the DataWeave CLI and MUnit, and reviewers can read the rules in one place.
 - **AI safety net:** structured output, then JSON schema, then field rules, then confidence thresholds, then human review. The AI never posts to the ERP unchecked, and AI failures go to a retry queue rather than being lost.
 - **Idempotency at three levels:**
   - the client's Idempotency-Key

@@ -228,21 +228,6 @@ def extra_tests(dw: DwRunner):
                 vars={"config": {"recovery": {"baseDelaySec": 60, "maxDelaySec": 3600}}, "recoveryError": {"code": "X", "message": "y"}})
     f += check("backoff: max attempts -> DEAD", rb["status"] == "DEAD", rb)
 
-    req = dw.run(RES, "dwl/claude-request.dwl", payload={"fileName": "a.pdf", "mimeType": "application/pdf", "contentBase64": "JVBERi0x"},
-                 vars={"config": {"anthropic": {"model": "claude-opus-5-5", "maxTokens": 16000, "effort": "medium"}},
-                       "claudeSchema": json.loads((RES / "schemas" / "claude-extraction-schema.json").read_text())})
-    f += check("claude request: document block + json_schema format",
-               req["messages"][0]["content"][0]["type"] == "document" and req["output_config"]["format"]["type"] == "json_schema"
-               and req["model"] == "claude-opus-5-5" and req["fallbacks"] == "default", req.get("model"))
-    claude_resp = {"id": "msg_1", "model": "claude-opus-5-5", "stop_reason": "end_turn",
-                   "content": [{"type": "thinking", "thinking": ""},
-                               {"type": "text", "text": json.dumps({"invoice_number": "INV-1", "overall_confidence": 0.9})}],
-                   "usage": {"input_tokens": 1000, "output_tokens": 200}}
-    out = dw.run(RES, "dwl/claude-response.dwl", payload=claude_resp)
-    f += check("claude response: parses text block", out["ok"] and out["extraction"]["invoice_number"] == "INV-1", out)
-    out = dw.run(RES, "dwl/claude-response.dwl", payload=dict(claude_resp, stop_reason="refusal", content=[]))
-    f += check("claude response: refusal -> ok=false", not out["ok"], out)
-
     # System API: ERP JSON -> XML payload, XML -> JSON response
     sys_invoice = {"invoiceId": "11111111-2222-3333-4444-555555555555", "invoiceNumber": "INV-2026-1001", "vendorId": "V-1001",
                    "poNumber": "PO-2026-0001", "invoiceDate": "2026-09-15", "dueDate": "2026-10-15", "currency": "USD",

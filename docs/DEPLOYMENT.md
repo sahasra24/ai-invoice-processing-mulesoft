@@ -53,7 +53,7 @@ Then, in Runtime Manager, confirm that `env=prod` and the secure properties are 
 - [ ] Add rate limiting and spike control on the Experience API.
 - [ ] Move document storage from the local folder to S3 or Azure Blob (only `document-storage-config` changes).
 - [ ] Set `file.flowState: stopped` (already the default in prod.yaml), or switch to the SFTP/S3 connector for drop folders.
-- [ ] Rotate `INTERNAL_CLIENT_SECRET`, `PROCESS_API_CLIENT_SECRET`, `ANTHROPIC_API_KEY` and the DB password; never reuse the local defaults.
+- [ ] Rotate `INTERNAL_CLIENT_SECRET`, `PROCESS_API_CLIENT_SECRET`, `MOCK_AI_API_KEY` and the DB password; never reuse the local defaults.
 - [ ] Anypoint Monitoring alerts: 5xx rate, `recovery.dead_letter`, average response time over 5s.
 
 ## 4. Monitoring

@@ -6,7 +6,7 @@ Shared functions live in a DataWeave **module**, `src/main/resources/modules/Inv
 
 ## How the scripts receive data
 
-Scripts never call `p()`. All configuration arrives in `vars.config`, which the `init-context-sub-flow` builds from properties. This keeps every script a pure function of `payload` + `vars`, so it can be unit-tested with the DataWeave CLI outside Mule (see `tools/dataweave-tests/run_pipeline_tests.py`, 36 passing checks).
+Scripts never call `p()`. All configuration arrives in `vars.config`, which the `init-context-sub-flow` builds from properties. This keeps every script a pure function of `payload` + `vars`, so it can be unit-tested with the DataWeave CLI outside Mule (see `tools/dataweave-tests/run_pipeline_tests.py`, 32 passing checks).
 
 ## Script catalogue
 
@@ -23,8 +23,6 @@ Scripts never call `p()`. All configuration arrives in `vars.config`, which the 
 | `tax-validation.dwl` | Tax validation | *Validate tax* | invoice, `vars.vendorCheck`, `vars.totals` | `{expectedRate, expectedTax, issues[]}` |
 | `approval-routing.dwl` | Approval routing | *Route for approval* | invoice + all check results | `{status, approvalChain, validationErrors, exceptions, ...}` |
 | `approval-authorization.dwl` | Role-based approval authorization | `process-invoice-decision-flow` > *Authorize decision* | invoice, `vars.decisionRequest` | `{allowed, httpStatus, errorCode, newStatus, ...}` |
-| `claude-request.dwl` | AI integration (Claude) | `ai-extraction-claude-sub-flow` > *Build Claude request* | document | Anthropic Messages API request |
-| `claude-response.dwl` | AI response handling | *Parse Claude response* | Messages API response | `{ok, provider, model, extraction, usage}` |
 | `recovery-backoff.dwl` | Retry with backoff | `recover-queue-item-sub-flow` > *Exponential backoff* | queue item | `{status: PENDING/DEAD, attemptCount, delaySeconds, ...}` |
 | `processing-result.dwl` | Final API response | *Build processing result* | vars | ProcessingResult |
 | `error-response.dwl` | Error response formatting | `global-error-handler` | `error`, `vars.errorOverride` | `{httpStatus, body}` |
@@ -76,7 +74,7 @@ The full expected output for every sample is in `sample-invoices/expected/*.expe
 1. **`$` inside double-quoted strings is interpolation.** `"$"` fails to compile; write `"\$"`.
 2. **The static type checker is path-insensitive.** For `if (x != null) f(x)` where `x: Binary | Null`, `f` still complains. Use `x as Binary` inside the guarded branch, or `default`.
 3. **`"abc"[0 to 999]` returns `null`, not `"abc"`.** Truncate with `if (sizeOf(s) > n) s[0 to n-1] else s`.
-4. **`type` is a reserved word.** Quote it in object keys (`"type": "document"`), which matters for the Claude API.
+4. **`type` is a reserved word.** Quote it in object keys (`"type": "document"`), which matters for many external JSON APIs.
 5. **Multipart parts are auto-parsed by MIME type.** A `.json` upload arrives as an Object, so use `.^raw` to hash the original bytes.
 
 ## Running the scripts outside Mule

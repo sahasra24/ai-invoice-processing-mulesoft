@@ -91,7 +91,7 @@
                 <properties>
                   <env>prod</env>
                   <SYS_API_HOST>${sys.api.host}</SYS_API_HOST>
-                  <AI_PROVIDER>claude</AI_PROVIDER>
+                  <MOCK_AI_HOST>${ai.host}</MOCK_AI_HOST>
                 </properties>
                 <secureProperties>
                   <mule.key>${mule.key}</mule.key>

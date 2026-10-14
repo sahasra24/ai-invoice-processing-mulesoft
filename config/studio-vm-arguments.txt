@@ -6,8 +6,5 @@ Local run (defaults from config/local.yaml are used for everything else):
 Production-like run with encrypted secrets:
     -M-Denv=prod -M-Dmule.key=<your-16-char-key>
 
-Use Claude instead of the mock extractor (and set ANTHROPIC_API_KEY on the Environment tab):
-    -M-DAI_PROVIDER=claude
-
 MUnit from Studio (Run > Run Configurations > MUnit > Arguments):
     -Denv=test

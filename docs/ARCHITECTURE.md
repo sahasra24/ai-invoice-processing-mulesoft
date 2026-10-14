@@ -20,8 +20,7 @@ flowchart LR
     subgraph System["System layer"]
         SAPI["invoice-system-api :8083<br/>MySQL, vendor master, POs,<br/>ERP adapter, recovery queue"]
     end
-    AI1[Mock Document AI]
-    AI2[Anthropic Claude API]
+    AI1[Document AI service - mock]
     DB[(MySQL 8)]
     ERP[Simulated ERP - XML]
     FS[(Document storage)]
@@ -32,8 +31,7 @@ flowchart LR
     XAPI -->|upload / process / decisions| PAPI
     XAPI -->|simple reads| SAPI
     PAPI --> SAPI
-    PAPI -->|AI_PROVIDER=mock| AI1
-    PAPI -->|AI_PROVIDER=claude| AI2
+    PAPI -->|extract| AI1
     SAPI --> DB
     SAPI --> ERP
     SAPI --> FS
@@ -56,7 +54,7 @@ sequenceDiagram
     participant X as Experience API
     participant P as Process API
     participant Y as System API
-    participant A as AI (mock / Claude)
+    participant A as Document AI
     participant E as ERP
     S->>X: POST /api/invoices/upload (multipart, Basic auth)
     X->>X: authenticate, authorize, type/size/magic bytes, SHA-256
@@ -157,5 +155,5 @@ All thresholds and tolerances are properties in `invoice-process-api/src/main/re
 | Service-to-service | `client_id` / `client_secret` headers between layers (replace with Client ID Enforcement policies in Anypoint) |
 | Secrets | Never in code. `UPPER_SNAKE` properties are overridden by environment variables; prod uses `secure::` encrypted values plus `-Dmule.key`; `mule-artifact.json` marks them as secure (hidden in Runtime Manager) |
 | Input validation | Extension allow-list, magic-byte check, size limit (Content-Length precheck and decoded size), file-name sanitising, UUID/regex checks on path params, JSON schema, parameterized SQL only |
-| Transport | HTTPS on CloudHub ingress; TLS listener template in Experience `global.xml`; HTTPS to Anthropic |
+| Transport | HTTPS on CloudHub ingress; TLS listener template in Experience `global.xml` |
 | Logging | JSON event logs with ids and statuses only; no payloads, documents, credentials or tokens; 5xx bodies never expose internals |

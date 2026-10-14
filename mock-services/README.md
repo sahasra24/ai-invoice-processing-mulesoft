@@ -24,4 +24,4 @@ python -m unittest discover -s tests -v    # 14 tests
 - PDF: real extraction. It parses the text layer, including FlateDecode streams, then applies label and regex parsing.
 - Images: simulated OCR using `fixtures/image-fixtures.json`, which `tools/generate_samples.py` generates.
 - Unknown images: return an empty, low-confidence result, which the platform routes to manual review.
-- For real OCR or LLM extraction, switch the Process API to `AI_PROVIDER=claude`.
+- To use a commercial OCR / document-AI service instead, replace the HTTP request in the Process API's `ai-extraction-mock-sub-flow` and map its output to the same `{provider, model, warnings, extraction}` envelope.

@@ -8,8 +8,8 @@ Built an AI-powered invoice processing platform on MuleSoft Mule 4 with three AP
 
 ## Resume bullets (pick 3-5)
 - Designed and built a **3-layer API-led integration** (Experience / Process / System APIs) in **MuleSoft Mule 4.9** that automates accounts-payable invoice processing end to end, from PDF/image upload to ERP posting.
-- Integrated **AI document extraction** (Anthropic Claude with JSON-schema structured output, plus a free mock provider) behind a provider-neutral contract. Added confidence scoring, JSON-schema validation and human-in-the-loop routing for uncertain extractions.
-- Implemented the core business rules in **13 modular DataWeave 2.0 scripts**: normalization, field and tax validation, duplicate detection, two-way PO matching with price and quantity tolerances, and threshold-based multi-level approval routing. Built a **36-check offline test harness** with the DataWeave CLI.
+- Integrated **AI document extraction** behind a provider-neutral contract, with a locally runnable document-AI service. Added per-field confidence scoring, JSON-schema validation and human-in-the-loop routing for uncertain extractions.
+- Implemented the core business rules in **12 modular DataWeave 2.0 scripts**: normalization, field and tax validation, duplicate detection, two-way PO matching with price and quantity tolerances, and threshold-based multi-level approval routing. Built a **32-check offline test harness** with the DataWeave CLI.
 - Engineered **enterprise reliability patterns**:
   - `until-successful` retries
   - a MySQL-backed recoverable failure queue processed by **Scheduler + Batch Job** with exponential backoff and dead-lettering
@@ -18,7 +18,7 @@ Built an AI-powered invoice processing platform on MuleSoft Mule 4 with three AP
 - Secured the platform with **Basic auth + role-based access control**, segregation of duties, Object Store approval locks, optimistic locking, file magic-byte and size validation, encrypted **secure properties**, and correlation-ID structured logging that never logs sensitive data.
 - Delivered **36 MUnit tests** with mocked AI, ERP and DB dependencies, a **49-request Postman collection**, Docker Compose infrastructure, and CloudHub 2.0 deployment configuration.
 
-**Skills line:** MuleSoft Anypoint Studio · Mule 4 · DataWeave 2.0 · API-led connectivity · HTTP / Database / File / Object Store connectors · Batch processing · MUnit · MySQL · REST · XML/JSON · Claude API · Maven · Postman · Docker · Git
+**Skills line:** MuleSoft Anypoint Studio · Mule 4 · DataWeave 2.0 · API-led connectivity · HTTP / Database / File / Object Store connectors · Batch processing · MUnit · MySQL · REST · XML/JSON · AI document extraction · Maven · Postman · Docker · Git
 
 ## 60-second pitch
 "Accounts-payable teams still key invoices in by hand. I built a MuleSoft platform where a supplier uploads a PDF or a phone photo and an AI model extracts the fields. The Process API then normalizes the data with DataWeave and runs the same checks an AP clerk would: does the vendor exist, is it a duplicate, does it match the purchase order, do the totals and tax add up? Small, clean invoices are posted to the ERP automatically. Larger ones go through a manager or finance-director approval chain, and anything uncertain, like low AI confidence or a price variance, goes to manual review. Every step is audited and traceable by correlation ID. Failures in the AI or the ERP aren't lost; they go to a retry queue with exponential backoff and a dead letter."

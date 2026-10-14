@@ -50,11 +50,6 @@
     <http:request-connection host="${MOCK_AI_HOST}" port="${MOCK_AI_PORT}" protocol="HTTP"/>
   </http:request-config>
 
-  <!-- Anthropic Messages API (Claude) - only used when AI_PROVIDER=claude.
-       HTTPS with the JVM default trust store. Requires ANTHROPIC_API_KEY. -->
-  <http:request-config name="anthropic-request-config" doc:name="Anthropic Claude API" responseTimeout="${ai.anthropic.timeoutMs}">
-    <http:request-connection host="${ai.anthropic.host}" port="443" protocol="HTTPS"/>
-  </http:request-config>
 
   <!-- ===================== Object Stores ===================== -->
   <!-- Short-lived per-invoice lock: prevents two approvers deciding the same invoice concurrently -->
@@ -93,7 +88,6 @@ output application/java
 fun num(key) = Mule::p(key) as Number
 ---
 {
-  aiProvider: lower(Mule::p('AI_PROVIDER')),
   confidenceThreshold: num('validation.confidenceThreshold'),
   minUsableConfidence: num('validation.minUsableConfidence'),
   maxInvoiceAgeDays: num('validation.maxInvoiceAgeDays'),
@@ -105,11 +99,6 @@ fun num(key) = Mule::p(key) as Number
   approverLimit: num('approval.approverLimit'),
   managerLimit: num('approval.managerLimit'),
   maxFileSizeBytes: num('file.maxFileSizeBytes'),
-  anthropic: {
-    model: Mule::p('ANTHROPIC_MODEL'),
-    maxTokens: num('ai.anthropic.maxTokens'),
-    effort: Mule::p('ai.anthropic.effort')
-  },
   recovery: {
     maxAttempts: num('recovery.maxAttempts'),
     baseDelaySec: num('recovery.baseDelaySec'),

@@ -1,6 +1,6 @@
 # AI-Powered Invoice Processing & ERP Integration (MuleSoft Mule 4)
 
-An end-to-end, enterprise-style integration platform. It receives supplier invoices as **PDF, image or JSON**, extracts the data with **AI** (Claude, or a free local mock), validates it, detects duplicates, matches it against **purchase orders**, routes it through a **role-based approval workflow**, and posts approved invoices to a **simulated ERP**, with a full audit trail and automatic recovery from failures.
+An end-to-end, enterprise-style integration platform. It receives supplier invoices as **PDF, image or JSON**, extracts the data with an **AI document-extraction service** (a free local mock is included), validates it, detects duplicates, matches it against **purchase orders**, routes it through a **role-based approval workflow**, and posts approved invoices to a **simulated ERP**, with a full audit trail and automatic recovery from failures.
 
 Built with **API-led connectivity** (Experience, Process and System APIs) on **Mule 4.9 / Java 17**.
 
@@ -11,12 +11,12 @@ Built with **API-led connectivity** (Experience, Process and System APIs) on **M
 | Area | What it demonstrates |
 |---|---|
 | API-led design | 3 Mule apps with clear responsibilities; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| AI document processing | Claude Messages API (PDF/image blocks + JSON-schema structured output) **or** zero-cost mock AI; per-field confidence; manual review for uncertain results |
+| AI document processing | Pluggable document-AI extraction (zero-cost local mock service included) with per-field confidence scores, JSON-schema validation and manual review for uncertain results |
 | DataWeave 2.0 | 20+ scripts: normalization, validation, duplicate detection, PO matching, totals/tax, approval routing, JSON to XML ERP mapping, error formatting |
 | Connectors & scopes | HTTP, Database (MySQL), File, Object Store, Validation, JSON schema, Secure Properties, Scheduler, Batch Job, For Each, Choice, Try/transactions, Until Successful, Idempotent Message Validator |
 | Reliability | Retries, recoverable failure queue with exponential backoff + dead letter, 3-level idempotency, optimistic locking, race-proof duplicate protection |
 | Security | Basic auth + RBAC, segregation of duties, client credentials between layers, encrypted properties, file magic-byte checks, no sensitive data in logs |
-| Testing | 36 MUnit tests, 36 offline DataWeave checks, 14 mock-service tests, 49-request Postman collection; [docs/TESTING.md](docs/TESTING.md) |
+| Testing | 36 MUnit tests, 32 offline DataWeave checks, 14 mock-service tests, 49-request Postman collection; [docs/TESTING.md](docs/TESTING.md) |
 
 ## Repository layout
 
@@ -67,21 +67,12 @@ Then import the Postman collection and run all scenarios. The full walkthrough i
 
 Passwords are stored only as SHA-256 hashes in `invoice-experience-api/src/main/resources/security/users.json`.
 
-### Use real AI (Claude)
-```bash
-# environment of the Process API (Studio: Run Configuration > Environment)
-AI_PROVIDER=claude
-ANTHROPIC_API_KEY=sk-ant-...        # never commit
-ANTHROPIC_MODEL=claude-opus-5-5     # default
-```
-Without a key the project runs entirely on the mock provider. **No paid service is needed for the demo.**
-
 ## Business workflow
 
 1. A supplier uploads a PDF, image or JSON invoice (API or drop folder).
 2. The Experience API authenticates the user and validates file type, magic bytes and size.
 3. The System API stores the document (idempotent on SHA-256) and the invoice is registered as `RECEIVED`.
-4. AI extraction runs (mock or Claude) with retries.
+4. AI extraction runs with retries.
 5. DataWeave normalizes the result to canonical JSON, then it is validated against a JSON schema.
 6. Required fields, formats, dates and confidence are validated.
 7. The vendor is verified against the vendor master.

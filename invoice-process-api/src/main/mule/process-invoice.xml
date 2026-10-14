@@ -141,7 +141,7 @@ var chain = (inv.approvalChain default "") splitBy "," filter (!isEmpty($))
        ===================================================================== -->
   <sub-flow name="process-invoice-orchestration-sub-flow">
     <set-variable variableName="statusChange" doc:name="PROCESSING"
-                  value="#[{ status: 'PROCESSING', step: 'PROCESSING_STARTED', actor: 'system', reason: 'Processing started (' ++ (vars.config.aiProvider default 'mock') ++ ' extraction)' }]"/>
+                  value="#[{ status: 'PROCESSING', step: 'PROCESSING_STARTED', actor: 'system', reason: 'Processing started (AI extraction)' }]"/>
     <flow-ref name="sys-patch-status-sub-flow" doc:name="Status: PROCESSING"/>
     <set-variable variableName="aiFailed" value="#[false]" doc:name="aiFailed = false"/>
 
@@ -390,18 +390,11 @@ output application/java
   </sub-flow>
 
   <!-- =====================================================================
-       AI extraction: provider selected by AI_PROVIDER (mock | claude)
+       AI extraction (document AI service; swap the sub-flow to change provider)
        Out: { provider, model, warnings, extraction } ; raises APP:AI_EXTRACTION_FAILED
        ===================================================================== -->
   <sub-flow name="ai-extraction-sub-flow">
-    <choice doc:name="Provider?">
-      <when expression="#[vars.config.aiProvider == 'claude']">
-        <flow-ref name="ai-extraction-claude-sub-flow" doc:name="Claude"/>
-      </when>
-      <otherwise>
-        <flow-ref name="ai-extraction-mock-sub-flow" doc:name="Mock document AI"/>
-      </otherwise>
-    </choice>
+    <flow-ref name="ai-extraction-mock-sub-flow" doc:name="Document AI extraction"/>
   </sub-flow>
 
   <sub-flow name="ai-extraction-mock-sub-flow">
@@ -437,59 +430,6 @@ output application/json
 { provider: payload.provider, model: payload.model, warnings: payload.warnings default [], extraction: payload.extraction }]]></ee:set-payload>
       </ee:message>
     </ee:transform>
-  </sub-flow>
-
-  <!-- Claude (Anthropic Messages API) with structured JSON output.
-       Retries 429 / 5xx / 529 / timeouts; other 4xx are permanent. -->
-  <sub-flow name="ai-extraction-claude-sub-flow">
-    <set-variable variableName="claudeSchema" value="#[readUrl('classpath://schemas/claude-extraction-schema.json', 'application/json')]" doc:name="Load output schema"/>
-    <set-payload value="#[vars.document]" doc:name="Document"/>
-    <ee:transform doc:name="Build Claude request">
-      <ee:message>
-        <ee:set-payload resource="dwl/claude-request.dwl"/>
-      </ee:message>
-    </ee:transform>
-    <try doc:name="Claude with retry">
-      <until-successful maxRetries="${ai.retry.maxRetries}" millisBetweenRetries="${ai.retry.intervalMs}" doc:name="Retry transient failures">
-        <http:request method="POST" config-ref="anthropic-request-config" path="/v1/messages" doc:name="AI - Claude messages">
-          <http:headers><![CDATA[#[{
-  'x-api-key': Mule::p('ANTHROPIC_API_KEY'),
-  'anthropic-version': '2023-06-01',
-  'anthropic-beta': 'server-side-fallback-2026-07-01',
-  'content-type': 'application/json'
-}]]]></http:headers>
-          <http:response-validator>
-            <http:success-status-code-validator values="200..299,400..428,430..499"/>
-          </http:response-validator>
-        </http:request>
-      </until-successful>
-      <error-handler>
-        <on-error-propagate type="ANY" doc:name="Retries exhausted" logException="false">
-          <raise-error type="APP:AI_EXTRACTION_FAILED" doc:name="Raise APP:AI_EXTRACTION_FAILED"
-                       description="#['Claude API unavailable after retries (' ++ (error.errorType.identifier default 'UNKNOWN') ++ ')']"/>
-        </on-error-propagate>
-      </error-handler>
-    </try>
-    <choice doc:name="HTTP success?">
-      <when expression="#[attributes.statusCode &gt;= 400]">
-        <!-- never log/return the API key; the error type/message from Anthropic is safe -->
-        <raise-error type="APP:AI_EXTRACTION_FAILED" doc:name="Raise APP:AI_EXTRACTION_FAILED"
-                     description="#['Claude API returned HTTP ' ++ (attributes.statusCode as String) ++ ': ' ++ (payload.error.'type' default '')]"/>
-      </when>
-    </choice>
-    <ee:transform doc:name="Parse Claude response">
-      <ee:message>
-        <ee:set-payload resource="dwl/claude-response.dwl"/>
-      </ee:message>
-    </ee:transform>
-    <choice doc:name="Usable extraction?">
-      <when expression="#[not (payload.ok default false)]">
-        <raise-error type="APP:AI_EXTRACTION_FAILED" doc:name="Raise APP:AI_EXTRACTION_FAILED"
-                     description="#['Claude extraction unusable: ' ++ (payload.reason default '') ++ ' ' ++ (payload.message default '')]"/>
-      </when>
-    </choice>
-    <logger level="INFO" doc:name="Log token usage" category="invoice.process.ai"
-            message="#[output application/json indent=false --- { event: 'ai.claude.usage', invoiceId: vars.invoiceId, model: payload.model, inputTokens: payload.usage.inputTokens, outputTokens: payload.usage.outputTokens }]"/>
   </sub-flow>
 
   <!-- =====================================================================

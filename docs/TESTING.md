@@ -6,7 +6,7 @@ This page states honestly what was **executed** while building the project and w
 
 | Area | How it was verified | Result |
 |---|---|---|
-| All DataWeave business logic (Process, System and Experience scripts) | `tools/dataweave-tests/run_pipeline_tests.py` with the official DataWeave CLI 2.12.3, running the real `.dwl` files with the same inputs the flows use | **36 / 36 pass** |
+| All DataWeave business logic (Process, System and Experience scripts) | `tools/dataweave-tests/run_pipeline_tests.py` with the official DataWeave CLI 2.12.3, running the real `.dwl` files with the same inputs the flows use | **32 / 32 pass** |
 | Routing of all 13 sample invoices | same harness: real mock-AI output, then normalize, validate, vendor, duplicate, PO, totals, tax, routing | all expected statuses (see table below) |
 | JSON to XML ERP payload | generated XML posted to the mock ERP and accepted | pass |
 | Multipart parsing and `.^raw` hashing | DataWeave CLI multipart round trip (PDF and JSON parts) | pass |
@@ -48,7 +48,6 @@ The build machine had no Mule runtime, no Anypoint Studio and no MySQL. These it
 | 4 DB integration MUnit tests | `mvn test -Dmunit.tags=integration` against MySQL |
 | SQL scripts on a real MySQL 8 server | `mysql < database/01-schema.sql` |
 | Postman end-to-end run (49 requests) | Collection Runner, folders 00 to 06 |
-| Claude integration (`AI_PROVIDER=claude`) | Requires an Anthropic API key. Request and response mapping is unit-tested; the live call is not |
 | CloudHub 2.0 deployment | Requires an Anypoint account |
 
 **Most likely first-run fixes, if any:**

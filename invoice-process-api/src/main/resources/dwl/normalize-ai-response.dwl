@@ -2,8 +2,8 @@
 /**
  * AI response normalization
  * ------------------------------------------------------------------
- * Converts the raw output of ANY extraction provider (mock document AI,
- * Claude, or a structured supplier JSON upload) into the canonical
+ * Converts the raw output of the extraction provider (document AI service
+ * or a structured supplier JSON upload) into the canonical
  * invoice model used by every downstream step.
  *
  * Input  (payload): { provider, model, warnings?, extraction: { snake_case raw fields,

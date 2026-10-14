@@ -44,7 +44,7 @@
   <rect class="prc" x="300" y="280" width="270" height="300" rx="10"/>
   <text class="t" x="435" y="306" text-anchor="middle">invoice-process-api :8082</text>
   <text class="s" x="316" y="332">1  register document (SHA-256 idempotent)</text>
-  <text class="s" x="316" y="351">2  AI extraction (mock | Claude) + retry</text>
+  <text class="s" x="316" y="351">2  AI document extraction + retry</text>
   <text class="s" x="316" y="370">3  normalize (DataWeave) + JSON schema</text>
   <text class="s" x="316" y="389">4  field validation + confidence check</text>
   <text class="s" x="316" y="408">5  vendor verification</text>
@@ -79,10 +79,6 @@
   <text class="t" x="775" y="98" text-anchor="middle">Mock Document AI :8090</text>
   <text class="m" x="775" y="118" text-anchor="middle">/ai/v1/extract (PDF text, image</text>
   <text class="m" x="775" y="134" text-anchor="middle">fixtures, confidence scores)</text>
-  <rect class="ext" x="920" y="70" width="240" height="80" rx="8"/>
-  <text class="t" x="1040" y="98" text-anchor="middle">Anthropic Claude API</text>
-  <text class="m" x="1040" y="118" text-anchor="middle">/v1/messages, PDF/image blocks,</text>
-  <text class="m" x="1040" y="134" text-anchor="middle">json_schema structured output</text>
 
   <rect class="ext" x="990" y="290" width="180" height="90" rx="8"/>
   <text class="t" x="1080" y="318" text-anchor="middle">MySQL 8</text>
@@ -110,9 +106,7 @@
   <path class="ln" d="M570,400 L660,400"/>
   <text class="lbl" x="582" y="392">client_id/secret</text>
   <path class="ln" d="M520,280 C560,200 640,160 700,150"/>
-  <text class="lbl" x="560" y="262">AI_PROVIDER=mock</text>
-  <path class="ln" d="M560,300 C700,230 900,200 980,150"/>
-  <text class="lbl" x="820" y="196">AI_PROVIDER=claude (HTTPS)</text>
+  <text class="lbl" x="560" y="262">extract (Bearer key)</text>
   <path class="ln" d="M930,335 L990,335"/>
   <path class="ln" d="M930,440 L990,440"/>
   <path class="ln" d="M930,535 L990,535"/>

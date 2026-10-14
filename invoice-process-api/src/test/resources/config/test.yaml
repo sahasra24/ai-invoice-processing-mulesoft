@@ -12,12 +12,9 @@ INTERNAL_CLIENT_SECRET: "local-dev-internal-secret"         # local demo only
 SYS_API_HOST: "localhost"
 SYS_API_PORT: "8083"
 SYS_API_PROTOCOL: "HTTP"
-AI_PROVIDER: "mock"                     # mock | claude
 MOCK_AI_HOST: "localhost"
 MOCK_AI_PORT: "8090"
 MOCK_AI_API_KEY: "mock-ai-key-local"    # local demo only
-ANTHROPIC_API_KEY: "not-configured"     # REQUIRED only when AI_PROVIDER=claude - set the env var, never commit it
-ANTHROPIC_MODEL: "claude-opus-5-5"
 FILE_INBOUND_DIR: "target/test-inbound"
 FILE_ARCHIVE_DIR: "target/test-archive"
 
@@ -36,11 +33,6 @@ ai:
   retry:
     maxRetries: "1"
     intervalMs: "10"
-  anthropic:
-    host: "api.anthropic.com"
-    maxTokens: "16000"
-    effort: "medium"
-    timeoutMs: "180000"
 
 validation:
   confidenceThreshold: "0.85"       # fields/overall below this -> MANUAL_REVIEW
