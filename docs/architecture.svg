@@ -75,10 +75,10 @@
   <text class="m" x="676" y="562">idempotent posting, PO consumption</text>
 
   <!-- externals -->
-  <rect class="ext" x="660" y="70" width="230" height="80" rx="8"/>
-  <text class="t" x="775" y="98" text-anchor="middle">Mock Document AI :8090</text>
-  <text class="m" x="775" y="118" text-anchor="middle">/ai/v1/extract (PDF text, image</text>
-  <text class="m" x="775" y="134" text-anchor="middle">fixtures, confidence scores)</text>
+  <rect class="ext" x="920" y="70" width="240" height="80" rx="8"/>
+  <text class="t" x="1040" y="98" text-anchor="middle">Document AI (mock) :8090</text>
+  <text class="m" x="1040" y="118" text-anchor="middle">/ai/v1/extract (PDF text, image</text>
+  <text class="m" x="1040" y="134" text-anchor="middle">fixtures, confidence scores)</text>
 
   <rect class="ext" x="990" y="290" width="180" height="90" rx="8"/>
   <text class="t" x="1080" y="318" text-anchor="middle">MySQL 8</text>
@@ -97,16 +97,16 @@
   <path class="ln" d="M240,105 L300,120"/>
   <path class="ln" d="M240,195 L300,180"/>
   <path class="ln" d="M240,285 L300,360"/>
-  <text class="lbl" x="250" y="345">FILE_DROP</text>
+  <text class="lbl" x="196" y="342">FILE_DROP</text>
   <path class="ln" d="M420,230 L420,280"/>
   <text class="lbl" x="426" y="260">upload / process / decisions</text>
-  <path class="ln" d="M570,150 C620,150 620,250 700,280"/>
-  <text class="lbl" x="590" y="205">reads (invoice,</text>
-  <text class="lbl" x="590" y="219">vendor, PO, history)</text>
+  <path class="ln" d="M570,110 L720,110 L720,278"/>
+  <text class="lbl" x="712" y="150" text-anchor="end">reads (invoice, vendor,</text>
+  <text class="lbl" x="712" y="164" text-anchor="end">PO, history)</text>
   <path class="ln" d="M570,400 L660,400"/>
   <text class="lbl" x="582" y="392">client_id/secret</text>
-  <path class="ln" d="M520,280 C560,200 640,160 700,150"/>
-  <text class="lbl" x="560" y="262">extract (Bearer key)</text>
+  <path class="ln" d="M570,300 C640,250 860,200 960,152"/>
+  <text class="lbl" x="830" y="185">extract (Bearer key)</text>
   <path class="ln" d="M930,335 L990,335"/>
   <path class="ln" d="M930,440 L990,440"/>
   <path class="ln" d="M930,535 L990,535"/>

@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1140" height="660" viewBox="0 0 1140 660">
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#90a4ae"/></marker></defs>
+<rect width="1140" height="660" fill="#ffffff"/>
+<text x="20" y="30" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#263238">invoice-process-api - invoice processing flows</text>
+<text x="20" y="50" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#78909c">Diagram of src/main/mule/process-invoice.xml (component names match doc:name in the XML)</text>
+<rect x="20" y="66" width="1100" height="130" rx="6" fill="#fafcfd" stroke="#b0bec5"/><rect x="20" y="66" width="1100" height="30" rx="6" fill="#eef3f6"/><rect x="20" y="90" width="1100" height="6" fill="#eef3f6"/><text x="34" y="86" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#37474f">process-create-invoice-flow</text><text x="1106" y="86" text-anchor="end" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#78909c">HTTP POST /process/v1/invoices</text>
+<rect x="34" y="106" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="73" y="114" width="40" height="32" rx="6" fill="#e3f2fd" stroke="#1e88e5"/>
+<text x="93" y="135" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#1e88e5">&#9654;</text>
+<text x="93" y="162" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Listener</text>
+<text x="93" y="176" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">POST /invoices</text>
+<path d="M152,145 L168,145" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="170" y="106" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="209" y="114" width="40" height="32" rx="6" fill="#eceff1" stroke="#546e7a"/>
+<text x="229" y="135" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#546e7a">&#8618;</text>
+<text x="229" y="162" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Authenticate</text>
+<text x="229" y="176" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">client credentials</text>
+<path d="M288,145 L304,145" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="306" y="106" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="345" y="114" width="40" height="32" rx="6" fill="#eceff1" stroke="#546e7a"/>
+<text x="365" y="135" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#546e7a">&#8618;</text>
+<text x="365" y="162" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Init context</text>
+<text x="365" y="176" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">vars.config</text>
+<path d="M424,145 L440,145" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="442" y="106" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="481" y="114" width="40" height="32" rx="6" fill="#fce4ec" stroke="#d81b60"/>
+<text x="501" y="135" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#d81b60">&#10003;</text>
+<text x="501" y="162" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Is true</text>
+<text x="501" y="176" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">document complete</text>
+<path d="M560,145 L576,145" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="578" y="106" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="617" y="114" width="40" height="32" rx="6" fill="#e8f5e9" stroke="#43a047"/>
+<text x="637" y="135" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#43a047">&#8644;</text>
+<text x="637" y="162" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">SYS - Create</text>
+<text x="637" y="176" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">invoice + file</text>
+<path d="M696,145 L712,145" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="714" y="106" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="753" y="114" width="40" height="32" rx="6" fill="#fff8e1" stroke="#f9a825"/>
+<text x="773" y="135" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#f9a825">&#9670;</text>
+<text x="773" y="162" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Replay?</text>
+<text x="773" y="176" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">SHA-256 idempotency</text>
+<path d="M832,145 L848,145" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="850" y="106" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="889" y="114" width="40" height="32" rx="6" fill="#eceff1" stroke="#546e7a"/>
+<text x="909" y="135" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#546e7a">&#8618;</text>
+<text x="909" y="162" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Process invoice</text>
+<text x="909" y="176" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">orchestration</text>
+<path d="M968,145 L984,145" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="986" y="106" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="1025" y="114" width="40" height="32" rx="6" fill="#f3e5f5" stroke="#8e24aa"/>
+<text x="1045" y="135" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#8e24aa">DW</text>
+<text x="1045" y="162" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Build result</text>
+<text x="1045" y="176" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">processing-result</text>
+<rect x="20" y="214" width="1100" height="420" rx="6" fill="#fafcfd" stroke="#b0bec5"/><rect x="20" y="214" width="1100" height="30" rx="6" fill="#eef3f6"/><rect x="20" y="238" width="1100" height="6" fill="#eef3f6"/><text x="34" y="234" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#37474f">validate-and-route-sub-flow</text><text x="1106" y="234" text-anchor="end" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#78909c">business workflow steps 4 - 12</text>
+<rect x="34" y="254" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="73" y="262" width="40" height="32" rx="6" fill="#eceff1" stroke="#546e7a"/>
+<text x="93" y="283" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#546e7a">&#8618;</text>
+<text x="93" y="310" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">AI extraction</text>
+<text x="93" y="324" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">until-successful</text>
+<path d="M152,293 L168,293" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="170" y="254" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="209" y="262" width="40" height="32" rx="6" fill="#f3e5f5" stroke="#8e24aa"/>
+<text x="229" y="283" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#8e24aa">DW</text>
+<text x="229" y="310" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Normalize</text>
+<text x="229" y="324" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">normalize-ai-response</text>
+<path d="M288,293 L304,293" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="306" y="254" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="345" y="262" width="40" height="32" rx="6" fill="#fce4ec" stroke="#d81b60"/>
+<text x="365" y="283" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#d81b60">&#10003;</text>
+<text x="365" y="310" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Validate schema</text>
+<text x="365" y="324" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">canonical JSON</text>
+<path d="M424,293 L440,293" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="442" y="254" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="481" y="262" width="40" height="32" rx="6" fill="#f3e5f5" stroke="#8e24aa"/>
+<text x="501" y="283" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#8e24aa">DW</text>
+<text x="501" y="310" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Validate fields</text>
+<text x="501" y="324" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">+ confidence</text>
+<path d="M560,293 L576,293" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="578" y="254" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="617" y="262" width="40" height="32" rx="6" fill="#e8f5e9" stroke="#43a047"/>
+<text x="637" y="283" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#43a047">&#8644;</text>
+<text x="637" y="310" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">SYS - Save</text>
+<text x="637" y="324" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">extraction</text>
+<path d="M696,293 L712,293" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="714" y="254" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="753" y="262" width="40" height="32" rx="6" fill="#e8f5e9" stroke="#43a047"/>
+<text x="773" y="283" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#43a047">&#8644;</text>
+<text x="773" y="310" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">SYS - Get vendor</text>
+<text x="773" y="324" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">200 / 404</text>
+<path d="M832,293 L848,293" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="850" y="254" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="889" y="262" width="40" height="32" rx="6" fill="#f3e5f5" stroke="#8e24aa"/>
+<text x="909" y="283" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#8e24aa">DW</text>
+<text x="909" y="310" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Verify vendor</text>
+<text x="909" y="324" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">vendor-verification</text>
+<path d="M968,293 L984,293" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="986" y="254" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="1025" y="262" width="40" height="32" rx="6" fill="#e8f5e9" stroke="#43a047"/>
+<text x="1045" y="283" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#43a047">&#8644;</text>
+<text x="1045" y="310" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">SYS - Duplicates</text>
+<text x="1045" y="324" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">invoice-duplicates</text>
+<path d="M1070,332 C1100,360 1100,370 1070,380 L100,380 C70,385 70,395 93,405" fill="none" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="34" y="410" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="73" y="418" width="40" height="32" rx="6" fill="#f3e5f5" stroke="#8e24aa"/>
+<text x="93" y="439" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#8e24aa">DW</text>
+<text x="93" y="466" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Check duplicates</text>
+<text x="93" y="480" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">duplicate-detection</text>
+<path d="M152,449 L168,449" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="170" y="410" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="209" y="418" width="40" height="32" rx="6" fill="#e8f5e9" stroke="#43a047"/>
+<text x="229" y="439" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#43a047">&#8644;</text>
+<text x="229" y="466" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">SYS - Get PO</text>
+<text x="229" y="480" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">purchase order</text>
+<path d="M288,449 L304,449" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="306" y="410" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="345" y="418" width="40" height="32" rx="6" fill="#f3e5f5" stroke="#8e24aa"/>
+<text x="365" y="439" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#8e24aa">DW</text>
+<text x="365" y="466" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Match PO + totals</text>
+<text x="365" y="480" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">po-matching</text>
+<path d="M424,449 L440,449" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="442" y="410" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="481" y="418" width="40" height="32" rx="6" fill="#f3e5f5" stroke="#8e24aa"/>
+<text x="501" y="439" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#8e24aa">DW</text>
+<text x="501" y="466" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Validate tax</text>
+<text x="501" y="480" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">tax-validation</text>
+<path d="M560,449 L576,449" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="578" y="410" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="617" y="418" width="40" height="32" rx="6" fill="#f3e5f5" stroke="#8e24aa"/>
+<text x="637" y="439" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#8e24aa">DW</text>
+<text x="637" y="466" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Route approval</text>
+<text x="637" y="480" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">approval-routing</text>
+<path d="M696,449 L712,449" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="714" y="410" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="753" y="418" width="40" height="32" rx="6" fill="#fbe9e7" stroke="#e64a19"/>
+<text x="773" y="439" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#e64a19">{ }</text>
+<text x="773" y="466" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Try</text>
+<text x="773" y="480" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">persist decision</text>
+<path d="M832,449 L848,449" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="850" y="410" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="889" y="418" width="40" height="32" rx="6" fill="#fff8e1" stroke="#f9a825"/>
+<text x="909" y="439" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#f9a825">&#9670;</text>
+<text x="909" y="466" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Auto-approved?</text>
+<text x="909" y="480" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">total &lt;= 1,000</text>
+<path d="M968,449 L984,449" stroke="#90a4ae" stroke-width="1.6" marker-end="url(#arr)"/>
+<rect x="986" y="410" width="118" height="78" rx="8" fill="#ffffff" stroke="#cfd8dc"/>
+<rect x="1025" y="418" width="40" height="32" rx="6" fill="#eceff1" stroke="#546e7a"/>
+<text x="1045" y="439" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#546e7a">&#8618;</text>
+<text x="1045" y="466" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#263238">Post to ERP</text>
+<text x="1045" y="480" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" fill="#78909c">erp-posting</text>
+<rect x="34" y="560" width="14" height="14" rx="3" fill="#e3f2fd" stroke="#1e88e5"/><text x="54" y="572" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#546e7a">Event source</text>
+<rect x="150.4" y="560" width="14" height="14" rx="3" fill="#eceff1" stroke="#546e7a"/><text x="170.4" y="572" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#546e7a">Flow reference</text>
+<rect x="279.20000000000005" y="560" width="14" height="14" rx="3" fill="#f3e5f5" stroke="#8e24aa"/><text x="299.20000000000005" y="572" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#546e7a">Transform Message (DataWeave)</text>
+<rect x="501.00000000000006" y="560" width="14" height="14" rx="3" fill="#e8f5e9" stroke="#43a047"/><text x="521.0" y="572" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#546e7a">HTTP Request</text>
+<rect x="617.4000000000001" y="560" width="14" height="14" rx="3" fill="#fff8e1" stroke="#f9a825"/><text x="637.4000000000001" y="572" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#546e7a">Choice router</text>
+<rect x="740.0000000000001" y="560" width="14" height="14" rx="3" fill="#fbe9e7" stroke="#e64a19"/><text x="760.0000000000001" y="572" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#546e7a">Try scope</text>
+<rect x="837.8000000000002" y="560" width="14" height="14" rx="3" fill="#fce4ec" stroke="#d81b60"/><text x="857.8000000000002" y="572" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#546e7a">Validation / JSON</text>
+<text x="34" y="605" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#546e7a">Errors: AI failures are queued for automatic retry (EXTRACTION_FAILED); ERP failures are queued (ERP_POSTING_FAILED);</text>
+<text x="34" y="622" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#546e7a">a concurrent duplicate caught by the database unique key becomes DUPLICATE; everything else goes to the global error handler.</text>
+</svg>
