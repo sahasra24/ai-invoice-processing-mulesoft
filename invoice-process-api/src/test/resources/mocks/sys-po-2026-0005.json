@@ -1,0 +1,23 @@
+{
+  "poNumber": "PO-2026-0005",
+  "vendorId": "V-1001",
+  "status": "OPEN",
+  "currency": "USD",
+  "subtotalAmount": 100,
+  "taxAmount": 8,
+  "totalAmount": 108,
+  "invoicedAmount": 0,
+  "remainingAmount": 108,
+  "lines": [
+    {
+      "lineNumber": 1,
+      "itemCode": "PEN-BLK-12",
+      "description": "Ballpoint Pens Black (box of 12)",
+      "quantity": 50,
+      "unitPrice": 2,
+      "lineAmount": 100,
+      "quantityInvoiced": 0,
+      "remainingQuantity": 50
+    }
+  ]
+}

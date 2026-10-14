@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Approval workflow tests for POST /process/v1/invoices/{invoiceId}/decisions
+  (role-based authorization, multi-level approval, segregation of duties,
+  final approval triggers ERP posting). System API calls are mocked.
+-->
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+
+  <munit:config name="process-approval-test-suite.xml"/>
+
+  <sub-flow name="mock-decision-writes">
+    <munit-tools:mock-when processor="http:request">
+      <munit-tools:with-attributes>
+        <munit-tools:with-attribute attributeName="doc:name" whereValue="SYS - Record approval"/>
+      </munit-tools:with-attributes>
+      <munit-tools:then-return>
+        <munit-tools:payload value="#[{ recorded: true }]" mediaType="application/json"/>
+        <munit-tools:attributes value="#[{ statusCode: 201 }]"/>
+      </munit-tools:then-return>
+    </munit-tools:mock-when>
+    <munit-tools:mock-when processor="http:request">
+      <munit-tools:with-attributes>
+        <munit-tools:with-attribute attributeName="doc:name" whereValue="SYS - Update status"/>
+      </munit-tools:with-attributes>
+      <munit-tools:then-return>
+        <munit-tools:payload value="#[{ status: 'OK' }]" mediaType="application/json"/>
+        <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+      </munit-tools:then-return>
+    </munit-tools:mock-when>
+    <munit-tools:mock-when processor="http:request">
+      <munit-tools:with-attributes>
+        <munit-tools:with-attribute attributeName="doc:name" whereValue="SYS - Post to ERP"/>
+      </munit-tools:with-attributes>
+      <munit-tools:then-return>
+        <munit-tools:payload value="#[{ erpStatus: 'POSTED', erpDocumentNumber: '5100000077', postedAt: '2026-10-13T10:00:00Z' }]" mediaType="application/json"/>
+        <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+      </munit-tools:then-return>
+    </munit-tools:mock-when>
+  </sub-flow>
+
+  <!-- ================================================================ -->
+  <munit:test name="approver-cannot-approve-manager-level" tags="unit"
+              description="APPROVER role on a MANAGER-level step -> 403 INSUFFICIENT_APPROVAL_AUTHORITY, nothing recorded">
+    <munit:behavior>
+      <flow-ref name="mock-decision-writes"/>
+      <munit-tools:mock-when processor="http:request">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="SYS - Get invoice"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[readUrl('classpath://mocks/sys-invoice-pending-two-level.json', 'application/json')]" mediaType="application/json"/>
+          <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <munit:set-event>
+        <munit:payload value="#[{ decision: 'APPROVE', username: 'approver1', roles: ['APPROVER'], comments: 'ok' }]" mediaType="application/json"/>
+        <munit:attributes value="#[{ headers: { client_id: 'test-process-client', client_secret: 'test-process-secret' }, uriParams: { invoiceId: '7d3e8f00-0000-4000-8000-000000001003' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="process-invoice-decision-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(403)]"/>
+      <munit-tools:assert-that expression="#[payload.error.code]" is="#[MunitTools::equalTo('INSUFFICIENT_APPROVAL_AUTHORITY')]"/>
+      <munit-tools:verify-call processor="http:request" times="0">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="SYS - Record approval"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+    </munit:validation>
+  </munit:test>
+
+  <!-- ================================================================ -->
+  <munit:test name="manager-approves-first-level" tags="unit"
+              description="MANAGER approves step 1 of 2 -> stays PENDING_APPROVAL, next level FINANCE_DIRECTOR, no ERP posting">
+    <munit:behavior>
+      <flow-ref name="mock-decision-writes"/>
+      <munit-tools:mock-when processor="http:request">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="SYS - Get invoice"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[readUrl('classpath://mocks/sys-invoice-pending-two-level.json', 'application/json')]" mediaType="application/json"/>
+          <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <munit:set-event>
+        <munit:payload value="#[{ decision: 'APPROVE', username: 'manager1', roles: ['MANAGER'], comments: 'Services delivered as agreed' }]" mediaType="application/json"/>
+        <munit:attributes value="#[{ headers: { client_id: 'test-process-client', client_secret: 'test-process-secret' }, uriParams: { invoiceId: '7d3e8f00-0000-4000-8000-000000001003' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="process-invoice-decision-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[payload.status]" is="#[MunitTools::equalTo('PENDING_APPROVAL')]"/>
+      <munit-tools:assert-that expression="#[payload.nextApprovalLevel]" is="#[MunitTools::equalTo('FINANCE_DIRECTOR')]"/>
+      <munit-tools:assert-that expression="#[payload.approvalsReceived]" is="#[MunitTools::equalTo(1)]"/>
+      <munit-tools:verify-call processor="http:request" times="0">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="SYS - Post to ERP"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+    </munit:validation>
+  </munit:test>
+
+  <!-- ================================================================ -->
+  <munit:test name="director-final-approval-posts-to-erp" tags="unit"
+              description="FINANCE_DIRECTOR completes the chain -> APPROVED -> posted to ERP -> POSTED_TO_ERP">
+    <munit:behavior>
+      <flow-ref name="mock-decision-writes"/>
+      <munit-tools:mock-when processor="http:request">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="SYS - Get invoice"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[readUrl('classpath://mocks/sys-invoice-pending-final-step.json', 'application/json')]" mediaType="application/json"/>
+          <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <munit:set-event>
+        <munit:payload value="#[{ decision: 'APPROVE', username: 'director1', roles: ['FINANCE_DIRECTOR'], comments: 'Approved' }]" mediaType="application/json"/>
+        <munit:attributes value="#[{ headers: { client_id: 'test-process-client', client_secret: 'test-process-secret' }, uriParams: { invoiceId: '7d3e8f00-0000-4000-8000-000000001003' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="process-invoice-decision-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[payload.status]" is="#[MunitTools::equalTo('POSTED_TO_ERP')]"/>
+      <munit-tools:assert-that expression="#[payload.erp.documentNumber]" is="#[MunitTools::equalTo('5100000077')]"/>
+      <munit-tools:verify-call processor="http:request" times="1">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="SYS - Post to ERP"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+    </munit:validation>
+  </munit:test>
+
+  <!-- ================================================================ -->
+  <munit:test name="submitter-cannot-approve-own-invoice" tags="unit"
+              description="Segregation of duties: the submitter is rejected even with a MANAGER role">
+    <munit:behavior>
+      <flow-ref name="mock-decision-writes"/>
+      <munit-tools:mock-when processor="http:request">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="SYS - Get invoice"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[readUrl('classpath://mocks/sys-invoice-pending-two-level.json', 'application/json')]" mediaType="application/json"/>
+          <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <munit:set-event>
+        <munit:payload value="#[{ decision: 'APPROVE', username: 'supplier1', roles: ['MANAGER'], comments: 'self' }]" mediaType="application/json"/>
+        <munit:attributes value="#[{ headers: { client_id: 'test-process-client', client_secret: 'test-process-secret' }, uriParams: { invoiceId: '7d3e8f00-0000-4000-8000-000000001003' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="process-invoice-decision-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(403)]"/>
+      <munit-tools:assert-that expression="#[payload.error.code]" is="#[MunitTools::equalTo('SEGREGATION_OF_DUTIES')]"/>
+    </munit:validation>
+  </munit:test>
+
+  <!-- ================================================================ -->
+  <munit:test name="reject-requires-reason" tags="unit"
+              description="Rejection without a reason -> 400 REJECTION_REASON_REQUIRED">
+    <munit:behavior>
+      <flow-ref name="mock-decision-writes"/>
+      <munit-tools:mock-when processor="http:request">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="SYS - Get invoice"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[readUrl('classpath://mocks/sys-invoice-pending-two-level.json', 'application/json')]" mediaType="application/json"/>
+          <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <munit:set-event>
+        <munit:payload value="#[{ decision: 'REJECT', username: 'manager1', roles: ['MANAGER'], comments: '' }]" mediaType="application/json"/>
+        <munit:attributes value="#[{ headers: { client_id: 'test-process-client', client_secret: 'test-process-secret' }, uriParams: { invoiceId: '7d3e8f00-0000-4000-8000-000000001003' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="process-invoice-decision-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(400)]"/>
+      <munit-tools:assert-that expression="#[payload.error.code]" is="#[MunitTools::equalTo('REJECTION_REASON_REQUIRED')]"/>
+    </munit:validation>
+  </munit:test>
+
+</mule>

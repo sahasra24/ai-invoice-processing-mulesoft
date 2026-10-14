@@ -1,0 +1,138 @@
+{
+  "sampleFile": "pdf/INV-2026-1001_acme_auto-approve.pdf",
+  "rawExtraction": {
+    "provider": "MOCK_DOCUMENT_AI",
+    "model": "mock-invoice-extractor-v1",
+    "warnings": [],
+    "extraction": {
+      "invoice_number": "INV-2026-1001",
+      "invoice_date": "2026-09-15",
+      "due_date": "2026-10-15",
+      "vendor_name": "Acme Office Supplies",
+      "vendor_id": "V-1001",
+      "purchase_order_number": "PO-2026-0001",
+      "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+      "currency": "USD",
+      "payment_terms": "Net 30",
+      "subtotal": "800.00",
+      "total_amount": "864.00",
+      "tax": "64.00",
+      "tax_rate": 0.08,
+      "line_items": [
+        {
+          "line_number": 1,
+          "item_code": "PAP-A4-500",
+          "description": "A4 Copy Paper 80gsm (box of 5 reams)",
+          "quantity": "100",
+          "unit_price": "5.00",
+          "amount": "500.00"
+        },
+        {
+          "line_number": 2,
+          "item_code": "TON-HP-26X",
+          "description": "HP 26X Black Toner Cartridge",
+          "quantity": "10",
+          "unit_price": "30.00",
+          "amount": "300.00"
+        }
+      ],
+      "field_confidence": {
+        "invoice_number": 0.96,
+        "invoice_date": 0.96,
+        "due_date": 0.95,
+        "vendor_name": 0.97,
+        "vendor_id": 0.97,
+        "purchase_order_number": 0.97,
+        "billing_address": 0.98,
+        "currency": 0.95,
+        "payment_terms": 0.99,
+        "subtotal": 0.95,
+        "total_amount": 0.95,
+        "tax": 0.95,
+        "line_items": 0.95
+      },
+      "overall_confidence": 0.958
+    }
+  },
+  "canonicalInvoice": {
+    "invoiceNumber": "INV-2026-1001",
+    "normalizedInvoiceNumber": "INV20261001",
+    "invoiceDate": "2026-09-15",
+    "dueDate": "2026-10-15",
+    "dueDateDerived": false,
+    "vendor": {
+      "id": "V-1001",
+      "name": "Acme Office Supplies"
+    },
+    "poNumber": "PO-2026-0001",
+    "billingAddress": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+    "currency": "USD",
+    "paymentTerms": "Net 30",
+    "lineItems": [
+      {
+        "lineNumber": 1,
+        "itemCode": "PAP-A4-500",
+        "description": "A4 Copy Paper 80gsm (box of 5 reams)",
+        "quantity": 100,
+        "unitPrice": 5,
+        "amount": 500,
+        "amountDerived": false
+      },
+      {
+        "lineNumber": 2,
+        "itemCode": "TON-HP-26X",
+        "description": "HP 26X Black Toner Cartridge",
+        "quantity": 10,
+        "unitPrice": 30,
+        "amount": 300,
+        "amountDerived": false
+      }
+    ],
+    "subtotal": 800,
+    "tax": 64,
+    "taxRate": 0.08,
+    "total": 864,
+    "extraction": {
+      "provider": "MOCK_DOCUMENT_AI",
+      "model": "mock-invoice-extractor-v1",
+      "overallConfidence": 0.958,
+      "fieldConfidence": {
+        "invoiceNumber": 0.96,
+        "invoiceDate": 0.96,
+        "vendorName": 0.97,
+        "vendorId": 0.97,
+        "poNumber": 0.97,
+        "billingAddress": 0.98,
+        "currency": 0.95,
+        "lineItems": 0.95,
+        "subtotal": 0.95,
+        "tax": 0.95,
+        "total": 0.95,
+        "paymentTerms": 0.99,
+        "dueDate": 0.95
+      },
+      "warnings": []
+    }
+  },
+  "routingDecision": {
+    "status": "APPROVED",
+    "autoApproved": true,
+    "approvalChain": [],
+    "approvalsRequired": 0,
+    "nextApprovalLevel": null,
+    "duplicateOf": null,
+    "decisionReason": "Auto-approved: all checks passed and total 864 <= 1000",
+    "validationErrors": [],
+    "exceptions": [],
+    "checks": {
+      "schemaValid": true,
+      "fieldsValid": true,
+      "vendorVerified": true,
+      "duplicateChecked": true,
+      "poMatched": true,
+      "totalsValid": true,
+      "taxValid": true,
+      "extractionConfidence": 0.958
+    }
+  }
+}

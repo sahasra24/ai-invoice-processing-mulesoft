@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:os="http://www.mulesoft.org/schema/mule/os"
+      xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+        http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+
+  <!-- =====================================================================
+       POST /process/v1/invoices/{invoiceId}/decisions
+       Body: { decision: APPROVE|REJECT, username, roles: [..], comments }
+       Protection against duplicate / unauthorized / concurrent approvals:
+         1. Object Store lock (failIfPresent) - one decision in flight per invoice
+         2. approval-authorization.dwl       - role level, SoD, already-decided, state
+         3. approval_records unique keys     - (invoice, level) and (invoice, user)
+         4. optimistic lock on status update - expectedStatus + expectedVersion
+       ===================================================================== -->
+  <flow name="process-invoice-decision-flow">
+    <http:listener config-ref="process-api-listener-config" path="/process/v1/invoices/{invoiceId}/decisions" allowedMethods="POST" doc:name="POST /invoices/{invoiceId}/decisions">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="process-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <flow-ref name="init-context-sub-flow" doc:name="Init context"/>
+    <set-variable variableName="invoiceId" value="#[attributes.uriParams.invoiceId]" doc:name="invoiceId"/>
+    <set-variable variableName="decisionRequest" value="#[payload]" doc:name="decisionRequest"/>
+    <validation:is-true doc:name="Valid decision" message="decision must be APPROVE or REJECT"
+                        expression="#[['APPROVE','REJECT'] contains (vars.decisionRequest.decision default '')]"/>
+    <validation:is-not-blank-string doc:name="username required" value="#[vars.decisionRequest.username]" message="username is required"/>
+
+    <!-- 1. concurrency lock (expires automatically after approval.lockTtlSeconds) -->
+    <os:store key="#['decision-' ++ vars.invoiceId]" objectStore="approval-lock-store" failIfPresent="true" doc:name="Acquire decision lock">
+      <os:value><![CDATA[#[vars.decisionRequest.username]]]></os:value>
+    </os:store>
+
+    <try doc:name="Decide">
+      <flow-ref name="sys-get-invoice-sub-flow" doc:name="Load invoice"/>
+      <!-- 2. authorization rules -->
+      <ee:transform doc:name="Authorize decision">
+        <ee:variables>
+          <ee:set-variable variableName="authz" resource="dwl/approval-authorization.dwl"/>
+        </ee:variables>
+      </ee:transform>
+      <choice doc:name="Allowed?">
+        <when expression="#[not vars.authz.allowed]">
+          <set-variable variableName="errorOverride" doc:name="Denial details"
+                        value="#[{ httpStatus: vars.authz.httpStatus, code: vars.authz.errorCode, message: vars.authz.message }]"/>
+          <logger level="WARN" doc:name="Log denied" category="invoice.process.approval"
+                  message="#[output application/json indent=false --- { event: 'approval.denied', invoiceId: vars.invoiceId, user: vars.decisionRequest.username, code: vars.authz.errorCode }]"/>
+          <raise-error type="APP:FORBIDDEN" description="Decision not allowed" doc:name="Raise APP:FORBIDDEN"/>
+        </when>
+      </choice>
+      <!-- 3. approval record (unique keys reject duplicates) -->
+      <http:request method="POST" config-ref="sys-api-request-config" path="/invoices/{invoiceId}/approvals" doc:name="SYS - Record approval">
+        <http:body><![CDATA[#[output application/json --- {
+  approvalLevel: vars.authz.approvalLevel,
+  decision: vars.authz.decision,
+  decidedBy: vars.decisionRequest.username,
+  decidedByRole: vars.authz.decidedByRole,
+  comments: vars.decisionRequest.comments
+}]]]></http:body>
+        <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+        <http:uri-params><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></http:uri-params>
+        <http:response-validator>
+          <http:success-status-code-validator values="200..499"/>
+        </http:response-validator>
+      </http:request>
+      <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+      <!-- 4. state transition with optimistic locking -->
+      <set-variable variableName="statusChange" doc:name="Decision status change" value="#[%dw 2.0
+output application/java
+---
+{
+  status: vars.authz.newStatus,
+  expectedStatus: vars.authz.expectedStatus,
+  expectedVersion: vars.authz.expectedVersion,
+  step: 'APPROVAL_' ++ vars.authz.decision,
+  actor: vars.decisionRequest.username,
+  reason: vars.authz.decision ++ ' at ' ++ vars.authz.approvalLevel ++ ' level by ' ++ vars.decisionRequest.username ++ (if (isEmpty(vars.decisionRequest.comments default '')) '' else (': ' ++ vars.decisionRequest.comments)),
+  fields: {
+    approvalsReceived: vars.authz.newApprovalsReceived,
+    (rejectionReason: vars.decisionRequest.comments) if (vars.authz.decision == 'REJECTED')
+  }
+}]"/>
+      <flow-ref name="sys-patch-status-sub-flow" doc:name="Update invoice status"/>
+      <set-variable variableName="finalStatus" value="#[vars.authz.newStatus]" doc:name="finalStatus"/>
+      <choice doc:name="Fully approved?">
+        <when expression="#[vars.authz.newStatus == 'APPROVED']">
+          <flow-ref name="erp-posting-sub-flow" doc:name="Post to ERP"/>
+        </when>
+      </choice>
+      <os:remove key="#['decision-' ++ vars.invoiceId]" objectStore="approval-lock-store" doc:name="Release lock"/>
+      <error-handler>
+        <on-error-propagate type="ANY" doc:name="Release lock and propagate" logException="false">
+          <try doc:name="Release lock (ignore errors)">
+            <os:remove key="#['decision-' ++ vars.invoiceId]" objectStore="approval-lock-store" doc:name="Release lock"/>
+            <error-handler>
+              <on-error-continue type="ANY" doc:name="Ignore" logException="false">
+                <logger level="DEBUG" doc:name="Lock already released" message="lock already released"/>
+              </on-error-continue>
+            </error-handler>
+          </try>
+        </on-error-propagate>
+      </error-handler>
+    </try>
+
+    <logger level="INFO" doc:name="Log decision" category="invoice.process.approval"
+            message="#[output application/json indent=false --- { event: 'approval.recorded', invoiceId: vars.invoiceId, user: vars.decisionRequest.username, level: vars.authz.approvalLevel, decision: vars.authz.decision, status: vars.finalStatus }]"/>
+    <ee:transform doc:name="Decision result">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  invoiceId: vars.invoiceId,
+  invoiceNumber: vars.currentInvoice.invoiceNumber,
+  decision: vars.authz.decision,
+  approvalLevel: vars.authz.approvalLevel,
+  decidedBy: vars.decisionRequest.username,
+  decidedByRole: vars.authz.decidedByRole,
+  status: vars.finalStatus,
+  approvalsReceived: vars.authz.newApprovalsReceived,
+  approvalsRequired: vars.currentInvoice.approvalsRequired,
+  nextApprovalLevel: vars.authz.nextApprovalLevel,
+  erp: if (vars.erpResult != null) { documentNumber: vars.erpResult.erpDocumentNumber, postedAt: vars.erpResult.postedAt } else null,
+  recovery: if (vars.failure != null) { queued: vars.failure.queued, failureType: vars.failure.failureType, errorCode: vars.failure.errorCode } else null,
+  correlationId: correlationId,
+  decidedAt: now() >> "UTC"
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+</mule>

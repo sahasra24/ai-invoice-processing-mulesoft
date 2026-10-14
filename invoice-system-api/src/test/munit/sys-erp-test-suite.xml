@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+
+  <munit:config name="sys-erp-test-suite.xml"/>
+
+  <!-- Shared mocks: an APPROVED invoice with one PO-matched line -->
+  <sub-flow name="mock-approved-invoice-load">
+    <munit-tools:mock-when processor="db:select">
+      <munit-tools:with-attributes>
+        <munit-tools:with-attribute attributeName="doc:name" whereValue="Select invoice"/>
+      </munit-tools:with-attributes>
+      <munit-tools:then-return>
+        <munit-tools:payload value="#[readUrl('classpath://mocks/db-invoice-approved.json', 'application/json')]"/>
+      </munit-tools:then-return>
+    </munit-tools:mock-when>
+    <munit-tools:mock-when processor="db:select">
+      <munit-tools:with-attributes>
+        <munit-tools:with-attribute attributeName="doc:name" whereValue="Select line items"/>
+      </munit-tools:with-attributes>
+      <munit-tools:then-return>
+        <munit-tools:payload value="#[[{ line_number: 1, item_code: 'PEN-BLK-12', description: 'Pens', quantity: 50, unit_price: 2, line_amount: 100, po_line_number: 1, match_status: 'MATCHED' }]]"/>
+      </munit-tools:then-return>
+    </munit-tools:mock-when>
+    <munit-tools:mock-when processor="db:select">
+      <munit-tools:with-attributes>
+        <munit-tools:with-attribute attributeName="doc:name" whereValue="Select approvals"/>
+      </munit-tools:with-attributes>
+      <munit-tools:then-return>
+        <munit-tools:payload value="#[[]]"/>
+      </munit-tools:then-return>
+    </munit-tools:mock-when>
+    <munit-tools:mock-when processor="db:select">
+      <munit-tools:with-attributes>
+        <munit-tools:with-attribute attributeName="doc:name" whereValue="Select document"/>
+      </munit-tools:with-attributes>
+      <munit-tools:then-return>
+        <munit-tools:payload value="#[[]]"/>
+      </munit-tools:then-return>
+    </munit-tools:mock-when>
+    <munit-tools:mock-when processor="db:update">
+      <munit-tools:then-return>
+        <munit-tools:payload value="#[{ affectedRows: 1 }]"/>
+      </munit-tools:then-return>
+    </munit-tools:mock-when>
+    <munit-tools:mock-when processor="db:insert">
+      <munit-tools:then-return>
+        <munit-tools:payload value="#[{ affectedRows: 1, generatedKeys: {} }]"/>
+      </munit-tools:then-return>
+    </munit-tools:mock-when>
+  </sub-flow>
+
+  <!-- ================================================================ -->
+  <munit:test name="erp-posting-success" tags="unit"
+              description="Approved invoice is sent as XML; ERP document number returned and PO consumed">
+    <munit:behavior>
+      <flow-ref name="mock-approved-invoice-load"/>
+      <munit-tools:mock-when processor="http:request">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="ERP - post AP invoice"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[MunitTools::getResourceAsString('mocks/erp-response-success.xml')]" mediaType="application/xml"/>
+          <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <munit:set-event>
+        <munit:payload value="#[{ invoiceId: '6f1c2a10-0000-4000-8000-000000000005' }]" mediaType="application/java"/>
+        <munit:attributes value="#[{ headers: { client_id: 'test-client', client_secret: 'test-secret' }, uriParams: {}, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="sys-post-invoice-to-erp-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[payload.erpDocumentNumber]" is="#[MunitTools::equalTo('5100000042')]"/>
+      <munit-tools:assert-that expression="#[payload.erpStatus]" is="#[MunitTools::equalTo('POSTED')]"/>
+      <munit-tools:verify-call processor="db:update" times="1">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Consume PO line quantity"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+    </munit:validation>
+  </munit:test>
+
+  <!-- ================================================================ -->
+  <munit:test name="erp-unavailable-returns-502" tags="unit"
+              description="ERP 503 is retried (until-successful) and finally mapped to 502 ERP_UNAVAILABLE">
+    <munit:behavior>
+      <flow-ref name="mock-approved-invoice-load"/>
+      <munit-tools:mock-when processor="http:request">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="ERP - post AP invoice"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:error typeId="HTTP:SERVICE_UNAVAILABLE"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <munit:set-event>
+        <munit:payload value="#[{ invoiceId: '6f1c2a10-0000-4000-8000-000000000005' }]" mediaType="application/java"/>
+        <munit:attributes value="#[{ headers: { client_id: 'test-client', client_secret: 'test-secret' }, uriParams: {}, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="sys-post-invoice-to-erp-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(502)]"/>
+      <munit-tools:assert-that expression="#[payload.error.code]" is="#[MunitTools::equalTo('ERP_UNAVAILABLE')]"/>
+      <!-- test.yaml: erp.retry.maxRetries = 1  => 2 attempts -->
+      <munit-tools:verify-call processor="http:request" times="2">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="ERP - post AP invoice"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+      <munit-tools:verify-call processor="db:update" times="0">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Consume PO amount"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+    </munit:validation>
+  </munit:test>
+
+  <!-- ================================================================ -->
+  <munit:test name="erp-business-rejection-returns-422" tags="unit"
+              description="ERP 400 (validation) is not retried and becomes 422 ERP_REJECTED">
+    <munit:behavior>
+      <flow-ref name="mock-approved-invoice-load"/>
+      <munit-tools:mock-when processor="http:request">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="ERP - post AP invoice"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[MunitTools::getResourceAsString('mocks/erp-response-validation-error.xml')]" mediaType="application/xml"/>
+          <munit-tools:attributes value="#[{ statusCode: 400 }]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <munit:set-event>
+        <munit:payload value="#[{ invoiceId: '6f1c2a10-0000-4000-8000-000000000005' }]" mediaType="application/java"/>
+        <munit:attributes value="#[{ headers: { client_id: 'test-client', client_secret: 'test-secret' }, uriParams: {}, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="sys-post-invoice-to-erp-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(422)]"/>
+      <munit-tools:assert-that expression="#[payload.error.code]" is="#[MunitTools::equalTo('ERP_REJECTED')]"/>
+      <munit-tools:verify-call processor="http:request" times="1"/>
+    </munit:validation>
+  </munit:test>
+
+</mule>

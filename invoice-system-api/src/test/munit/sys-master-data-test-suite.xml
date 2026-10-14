@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+
+  <munit:config name="sys-master-data-test-suite.xml"/>
+
+  <!-- ================================================================ -->
+  <munit:test name="get-vendor-returns-view" tags="unit"
+              description="GET /vendors/{id}: DB row is mapped to the camelCase vendor view">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Select vendor"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[readUrl('classpath://mocks/db-vendor-v1001.json', 'application/json')]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <munit:set-event>
+        <munit:attributes value="#[{ headers: { client_id: 'test-client', client_secret: 'test-secret' }, uriParams: { vendorId: 'V-1001' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="sys-get-vendor-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[payload.vendorId]" is="#[MunitTools::equalTo('V-1001')]"/>
+      <munit-tools:assert-that expression="#[payload.vendorName]" is="#[MunitTools::equalTo('Acme Office Supplies')]"/>
+      <munit-tools:assert-that expression="#[payload.defaultTaxRate]" is="#[MunitTools::closeTo(0.08, 0.0001)]"/>
+      <munit-tools:assert-that expression="#[payload.address.city]" is="#[MunitTools::equalTo('Seattle')]"/>
+    </munit:validation>
+  </munit:test>
+
+  <!-- ================================================================ -->
+  <munit:test name="get-vendor-not-found-returns-404" tags="unit"
+              description="Unknown vendor -> 404 VENDOR_NOT_FOUND error body">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Select vendor"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[[]]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <munit:set-event>
+        <munit:attributes value="#[{ headers: { client_id: 'test-client', client_secret: 'test-secret' }, uriParams: { vendorId: 'V-9999' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="sys-get-vendor-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(404)]"/>
+      <munit-tools:assert-that expression="#[payload.error.code]" is="#[MunitTools::equalTo('VENDOR_NOT_FOUND')]"/>
+    </munit:validation>
+  </munit:test>
+
+  <!-- ================================================================ -->
+  <munit:test name="get-vendor-invalid-id-returns-400" tags="unit"
+              description="Malformed vendor id is rejected by the validation module before any DB call">
+    <munit:execution>
+      <munit:set-event>
+        <munit:attributes value="#[{ headers: { client_id: 'test-client', client_secret: 'test-secret' }, uriParams: { vendorId: 'DROP TABLE' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="sys-get-vendor-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(400)]"/>
+      <munit-tools:verify-call processor="db:select" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <!-- ================================================================ -->
+  <munit:test name="missing-client-credentials-returns-401" tags="unit"
+              description="Internal API rejects calls without client_id / client_secret">
+    <munit:execution>
+      <munit:set-event>
+        <munit:attributes value="#[{ headers: {}, uriParams: { vendorId: 'V-1001' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="sys-get-vendor-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(401)]"/>
+      <munit-tools:assert-that expression="#[payload.error.code]" is="#[MunitTools::equalTo('UNAUTHORIZED')]"/>
+    </munit:validation>
+  </munit:test>
+
+  <!-- ================================================================ -->
+  <munit:test name="get-purchase-order-computes-remaining" tags="unit"
+              description="PO view exposes remaining amount and remaining line quantities">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Select PO header"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[[{ po_number: 'PO-2026-0001', vendor_id: 'V-1001', po_date: '2026-09-01', currency: 'USD', subtotal_amount: 800, tax_amount: 64, total_amount: 864, invoiced_amount: 100, status: 'PARTIALLY_INVOICED', buyer_email: 'b@x' }]]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Select PO lines"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[[{ line_number: 1, item_code: 'PAP-A4-500', description: 'Paper', quantity: 100, unit_price: 5, line_amount: 500, quantity_invoiced: 20 }]]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <munit:set-event>
+        <munit:attributes value="#[{ headers: { client_id: 'test-client', client_secret: 'test-secret' }, uriParams: { poNumber: 'PO-2026-0001' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="sys-get-purchase-order-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[payload.remainingAmount]" is="#[MunitTools::equalTo(764)]"/>
+      <munit-tools:assert-that expression="#[payload.lines[0].remainingQuantity]" is="#[MunitTools::equalTo(80)]"/>
+    </munit:validation>
+  </munit:test>
+
+</mule>

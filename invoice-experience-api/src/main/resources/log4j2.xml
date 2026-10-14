@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Structured logging. Every log line carries the Mule correlation id (MDC key
+  "correlationId"), which is propagated across all three APIs through the
+  X-Correlation-ID header, so one request can be traced end to end:
+      grep <correlationId> logs/*.log
+  Flows log JSON event objects only (ids, statuses, error types) - never
+  invoice payloads, document content, credentials or tokens.
+-->
+<Configuration>
+  <Appenders>
+    <RollingFile name="file"
+                 fileName="${sys:mule.home}${sys:file.separator}logs${sys:file.separator}invoice-experience-api.log"
+                 filePattern="${sys:mule.home}${sys:file.separator}logs${sys:file.separator}invoice-experience-api-%i.log">
+      <PatternLayout pattern="%d{ISO8601} %-5p [%t] [correlationId=%X{correlationId}] %c - %m%n"/>
+      <SizeBasedTriggeringPolicy size="10 MB"/>
+      <DefaultRolloverStrategy max="10"/>
+    </RollingFile>
+    <Console name="console" target="SYSTEM_OUT">
+      <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5p [correlationId=%X{correlationId}] %c{1.} - %m%n"/>
+    </Console>
+  </Appenders>
+  <Loggers>
+    <!-- Never log HTTP wire traffic (would expose payloads/credentials) -->
+    <AsyncLogger name="org.mule.service.http" level="WARN"/>
+    <AsyncLogger name="org.mule.extension.http" level="WARN"/>
+    <AsyncLogger name="org.mule.runtime.core.internal.processor.LoggerMessageProcessor" level="INFO"/>
+    <AsyncLogger name="com.mulesoft.agent" level="INFO"/>
+    <AsyncLogger name="invoice" level="INFO"/>
+    <AsyncRoot level="INFO">
+      <AppenderRef ref="file"/>
+      <AppenderRef ref="console"/>
+    </AsyncRoot>
+  </Loggers>
+</Configuration>

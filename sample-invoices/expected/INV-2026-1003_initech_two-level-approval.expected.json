@@ -1,0 +1,141 @@
+{
+  "sampleFile": "pdf/INV-2026-1003_initech_two-level-approval.pdf",
+  "rawExtraction": {
+    "provider": "MOCK_DOCUMENT_AI",
+    "model": "mock-invoice-extractor-v1",
+    "warnings": [],
+    "extraction": {
+      "invoice_number": "INV-2026-1003",
+      "invoice_date": "2026-09-25",
+      "due_date": "2026-11-24",
+      "vendor_name": "Initech IT Services",
+      "vendor_id": "V-1003",
+      "purchase_order_number": "PO-2026-0003",
+      "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+      "currency": "USD",
+      "payment_terms": "Net 60",
+      "subtotal": "60,000.00",
+      "total_amount": "64,800.00",
+      "tax": "4,800.00",
+      "tax_rate": 0.08,
+      "line_items": [
+        {
+          "line_number": 1,
+          "item_code": "SRV-CLOUD",
+          "description": "Cloud Migration Services (hours)",
+          "quantity": "300",
+          "unit_price": "150.00",
+          "amount": "45,000.00"
+        },
+        {
+          "line_number": 2,
+          "item_code": "SRV-SECAUD",
+          "description": "Security Audit (fixed fee)",
+          "quantity": "1",
+          "unit_price": "15,000.00",
+          "amount": "15,000.00"
+        }
+      ],
+      "field_confidence": {
+        "invoice_number": 0.97,
+        "invoice_date": 0.96,
+        "due_date": 0.97,
+        "vendor_name": 0.95,
+        "vendor_id": 0.96,
+        "purchase_order_number": 0.99,
+        "billing_address": 0.98,
+        "currency": 0.95,
+        "payment_terms": 0.97,
+        "subtotal": 0.96,
+        "total_amount": 0.99,
+        "tax": 0.98,
+        "line_items": 0.96
+      },
+      "overall_confidence": 0.966
+    }
+  },
+  "canonicalInvoice": {
+    "invoiceNumber": "INV-2026-1003",
+    "normalizedInvoiceNumber": "INV20261003",
+    "invoiceDate": "2026-09-25",
+    "dueDate": "2026-11-24",
+    "dueDateDerived": false,
+    "vendor": {
+      "id": "V-1003",
+      "name": "Initech IT Services"
+    },
+    "poNumber": "PO-2026-0003",
+    "billingAddress": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+    "currency": "USD",
+    "paymentTerms": "Net 60",
+    "lineItems": [
+      {
+        "lineNumber": 1,
+        "itemCode": "SRV-CLOUD",
+        "description": "Cloud Migration Services (hours)",
+        "quantity": 300,
+        "unitPrice": 150,
+        "amount": 45000,
+        "amountDerived": false
+      },
+      {
+        "lineNumber": 2,
+        "itemCode": "SRV-SECAUD",
+        "description": "Security Audit (fixed fee)",
+        "quantity": 1,
+        "unitPrice": 15000,
+        "amount": 15000,
+        "amountDerived": false
+      }
+    ],
+    "subtotal": 60000,
+    "tax": 4800,
+    "taxRate": 0.08,
+    "total": 64800,
+    "extraction": {
+      "provider": "MOCK_DOCUMENT_AI",
+      "model": "mock-invoice-extractor-v1",
+      "overallConfidence": 0.966,
+      "fieldConfidence": {
+        "invoiceNumber": 0.97,
+        "invoiceDate": 0.96,
+        "vendorName": 0.95,
+        "vendorId": 0.96,
+        "poNumber": 0.99,
+        "billingAddress": 0.98,
+        "currency": 0.95,
+        "lineItems": 0.96,
+        "subtotal": 0.96,
+        "tax": 0.98,
+        "total": 0.99,
+        "paymentTerms": 0.97,
+        "dueDate": 0.97
+      },
+      "warnings": []
+    }
+  },
+  "routingDecision": {
+    "status": "PENDING_APPROVAL",
+    "autoApproved": false,
+    "approvalChain": [
+      "MANAGER",
+      "FINANCE_DIRECTOR"
+    ],
+    "approvalsRequired": 2,
+    "nextApprovalLevel": "MANAGER",
+    "duplicateOf": null,
+    "decisionReason": "Approval required: MANAGER -> FINANCE_DIRECTOR",
+    "validationErrors": [],
+    "exceptions": [],
+    "checks": {
+      "schemaValid": true,
+      "fieldsValid": true,
+      "vendorVerified": true,
+      "duplicateChecked": true,
+      "poMatched": true,
+      "totalsValid": true,
+      "taxValid": true,
+      "extractionConfidence": 0.966
+    }
+  }
+}

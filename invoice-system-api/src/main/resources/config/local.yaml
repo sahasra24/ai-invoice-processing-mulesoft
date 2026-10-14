@@ -1,0 +1,48 @@
+# =====================================================================
+# invoice-system-api - LOCAL configuration
+#
+# Convention: UPPER_SNAKE_CASE keys are environment-specific or secret.
+# Mule resolves properties in this order (highest first):
+#   deployment properties > system properties (-D) > ENVIRONMENT VARIABLES
+#   > configuration files (this file) > global properties
+# so exporting e.g. DB_PASSWORD=... overrides the local default below
+# without editing any file. Never commit real credentials.
+# =====================================================================
+
+# ---- secrets / environment specific (override via env vars) --------
+DB_HOST: "localhost"
+DB_PORT: "3306"
+DB_NAME: "invoice_db"
+DB_USER: "invoice_app"
+DB_PASSWORD: "ChangeMe_Local_2026!"          # local demo only
+INTERNAL_CLIENT_ID: "invoice-internal-client"
+INTERNAL_CLIENT_SECRET: "local-dev-internal-secret"   # local demo only
+ERP_HOST: "localhost"
+ERP_PORT: "8090"
+ERP_PROTOCOL: "HTTP"
+ERP_USERNAME: "erp_integration"
+ERP_PASSWORD: "erp-local-pass"               # local demo only
+DOCUMENT_STORAGE_DIR: "/tmp/invoice-documents"
+
+# ---- application settings -----------------------------------------
+http:
+  host: "0.0.0.0"
+  port: "8083"
+
+db:
+  maxPoolSize: "10"
+  minPoolSize: "1"
+  queryTimeoutSec: "15"
+  reconnectFrequencyMs: "3000"
+  reconnectAttempts: "5"
+
+erp:
+  basePath: "/erp/v1"
+  timeoutMs: "10000"
+  retry:
+    maxRetries: "1"
+    intervalMs: "1000"
+
+query:
+  maxPageSize: "100"
+  duplicateDateWindowDays: "7"

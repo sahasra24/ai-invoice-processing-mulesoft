@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:os="http://www.mulesoft.org/schema/mule/os"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+        http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd">
+
+  <global-property doc:name="Default environment" name="env" value="local"/>
+  <global-property doc:name="Default secure key (local only)" name="mule.key" value="LocalOnlyKey2026"/>
+  <configuration-properties doc:name="Environment properties" file="config/${env}.yaml"/>
+  <secure-properties:config name="secure-properties-config" doc:name="Secure Properties"
+                            file="config/secure-${env}.yaml" key="${mule.key}">
+    <secure-properties:encrypt algorithm="AES" mode="CBC"/>
+  </secure-properties:config>
+
+  <configuration doc:name="Default error handler" defaultErrorHandler-ref="global-error-handler"/>
+
+  <!-- ===================== Inbound ===================== -->
+  <http:listener-config name="process-api-listener-config" doc:name="Process API listener">
+    <http:listener-connection host="${http.host}" port="${http.port}"/>
+  </http:listener-config>
+
+  <file:config name="inbound-file-config" doc:name="Supplier drop folder">
+    <file:connection workingDir="${FILE_INBOUND_DIR}"/>
+  </file:config>
+
+  <file:config name="archive-file-config" doc:name="Archive folder">
+    <file:connection workingDir="${FILE_ARCHIVE_DIR}"/>
+  </file:config>
+
+  <!-- ===================== Outbound ===================== -->
+  <!-- System API (client credentials are sent per request from vars.sysHeaders) -->
+  <http:request-config name="sys-api-request-config" doc:name="System API" basePath="${sys.api.basePath}"
+                       responseTimeout="${sys.api.timeoutMs}">
+    <http:request-connection host="${SYS_API_HOST}" port="${SYS_API_PORT}" protocol="${SYS_API_PROTOCOL}"/>
+  </http:request-config>
+
+  <!-- Mock AI document extraction service (free, local) -->
+  <http:request-config name="mock-ai-request-config" doc:name="Mock AI extraction" responseTimeout="${ai.timeoutMs}">
+    <http:request-connection host="${MOCK_AI_HOST}" port="${MOCK_AI_PORT}" protocol="HTTP"/>
+  </http:request-config>
+
+  <!-- Anthropic Messages API (Claude) - only used when AI_PROVIDER=claude.
+       HTTPS with the JVM default trust store. Requires ANTHROPIC_API_KEY. -->
+  <http:request-config name="anthropic-request-config" doc:name="Anthropic Claude API" responseTimeout="${ai.anthropic.timeoutMs}">
+    <http:request-connection host="${ai.anthropic.host}" port="443" protocol="HTTPS"/>
+  </http:request-config>
+
+  <!-- ===================== Object Stores ===================== -->
+  <!-- Short-lived per-invoice lock: prevents two approvers deciding the same invoice concurrently -->
+  <os:object-store name="approval-lock-store" doc:name="Approval locks" persistent="true"
+                   entryTtl="${approval.lockTtlSeconds}" entryTtlUnit="SECONDS"
+                   expirationInterval="10" expirationIntervalUnit="SECONDS" maxEntries="10000"/>
+  <!-- Remembers files already picked up from the drop folder (idempotent file intake) -->
+  <os:object-store name="file-idempotency-store" doc:name="Processed files" persistent="true"
+                   entryTtl="7" entryTtlUnit="DAYS" maxEntries="100000"/>
+
+  <!-- =====================================================================
+       Shared sub-flows
+       ===================================================================== -->
+
+  <!-- Validates the Experience API's client credentials -->
+  <sub-flow name="process-client-auth-sub-flow">
+    <choice doc:name="Valid client credentials?">
+      <when expression="#[(attributes.headers.client_id default '') == Mule::p('PROCESS_API_CLIENT_ID') and (attributes.headers.client_secret default '') == Mule::p('PROCESS_API_CLIENT_SECRET')]">
+        <logger level="DEBUG" doc:name="Client authenticated" category="invoice.process.security"
+                message="#[output application/json indent=false --- { event: 'client.authenticated' }]"/>
+      </when>
+      <otherwise>
+        <raise-error type="APP:UNAUTHORIZED" doc:name="Raise APP:UNAUTHORIZED"
+                     description="Missing or invalid client_id / client_secret headers"/>
+      </otherwise>
+    </choice>
+  </sub-flow>
+
+  <!-- Builds vars.config (typed business configuration consumed by the DataWeave
+       scripts) and vars.sysHeaders (System API credentials + correlation id). -->
+  <sub-flow name="init-context-sub-flow">
+    <ee:transform doc:name="Load configuration">
+      <ee:variables>
+        <ee:set-variable variableName="config"><![CDATA[%dw 2.0
+output application/java
+fun num(key) = Mule::p(key) as Number
+---
+{
+  aiProvider: lower(Mule::p('AI_PROVIDER')),
+  confidenceThreshold: num('validation.confidenceThreshold'),
+  minUsableConfidence: num('validation.minUsableConfidence'),
+  maxInvoiceAgeDays: num('validation.maxInvoiceAgeDays'),
+  allowedCurrencies: (Mule::p('validation.allowedCurrencies') splitBy ",") map trim($),
+  amountTolerance: num('validation.amountTolerance'),
+  taxTolerance: num('validation.taxTolerance'),
+  priceTolerancePct: num('validation.priceTolerancePct'),
+  autoApproveLimit: num('approval.autoApproveLimit'),
+  approverLimit: num('approval.approverLimit'),
+  managerLimit: num('approval.managerLimit'),
+  maxFileSizeBytes: num('file.maxFileSizeBytes'),
+  anthropic: {
+    model: Mule::p('ANTHROPIC_MODEL'),
+    maxTokens: num('ai.anthropic.maxTokens'),
+    effort: Mule::p('ai.anthropic.effort')
+  },
+  recovery: {
+    maxAttempts: num('recovery.maxAttempts'),
+    baseDelaySec: num('recovery.baseDelaySec'),
+    maxDelaySec: num('recovery.maxDelaySec'),
+    batchSize: num('recovery.batchSize')
+  }
+}]]></ee:set-variable>
+        <ee:set-variable variableName="sysHeaders"><![CDATA[%dw 2.0
+output application/java
+---
+{
+  client_id: Mule::p('INTERNAL_CLIENT_ID'),
+  client_secret: Mule::p('INTERNAL_CLIENT_SECRET'),
+  'X-Correlation-ID': correlationId
+}]]></ee:set-variable>
+      </ee:variables>
+    </ee:transform>
+  </sub-flow>
+
+  <!-- Internal calls accept 200..499 so that 4xx responses keep their body and
+       status (the HTTP connector has no error type for e.g. 409/422). A 4xx is
+       converted into APP:DOWNSTREAM_REJECTED carrying the downstream status, code
+       and message in vars.errorOverride, which the global error handler returns as-is. -->
+  <sub-flow name="check-downstream-sub-flow">
+    <choice doc:name="Downstream 4xx?">
+      <when expression="#[(attributes.statusCode default 200) &gt;= 400]">
+        <set-variable variableName="downstreamErrorCode" value="#[payload.error.code default 'DOWNSTREAM_ERROR']" doc:name="downstreamErrorCode"/>
+        <set-variable variableName="errorOverride" doc:name="Propagate downstream error"
+                      value="#[{ httpStatus: attributes.statusCode, code: vars.downstreamErrorCode, message: payload.error.message default ('Downstream service returned HTTP ' ++ (attributes.statusCode as String)), details: payload.error.details }]"/>
+        <raise-error type="APP:DOWNSTREAM_REJECTED" doc:name="Raise APP:DOWNSTREAM_REJECTED"
+                     description="#['Downstream returned HTTP ' ++ (attributes.statusCode as String) ++ ' ' ++ (payload.error.code default '')]"/>
+      </when>
+      <otherwise>
+        <remove-variable variableName="downstreamErrorCode" doc:name="Clear previous code"/>
+      </otherwise>
+    </choice>
+  </sub-flow>
+
+  <!-- =====================================================================
+       Global error handler (see dwl/error-response.dwl)
+       ===================================================================== -->
+  <error-handler name="global-error-handler" doc:name="Global error handler">
+    <on-error-continue type="ANY" enableNotifications="true" logException="false" doc:name="On any error">
+      <set-variable variableName="correlationIdValue" value="#[correlationId]" doc:name="Capture correlation id"/>
+      <ee:transform doc:name="Map error to HTTP response">
+        <ee:message>
+          <ee:set-payload resource="dwl/error-response.dwl"/>
+        </ee:message>
+      </ee:transform>
+      <set-variable variableName="httpStatus" value="#[payload.httpStatus]" doc:name="Set httpStatus"/>
+      <choice doc:name="Server or client error?">
+        <when expression="#[vars.httpStatus &gt;= 500]">
+          <logger level="ERROR" doc:name="Log server error" category="invoice.process.error"
+                  message="#[output application/json indent=false --- { event: 'request.failed', httpStatus: vars.httpStatus, invoiceId: vars.invoiceId default null, errorType: (error.errorType.namespace default '') ++ ':' ++ (error.errorType.identifier default ''), detail: error.description }]"/>
+        </when>
+        <otherwise>
+          <logger level="WARN" doc:name="Log client error" category="invoice.process.error"
+                  message="#[output application/json indent=false --- { event: 'request.rejected', httpStatus: vars.httpStatus, invoiceId: vars.invoiceId default null, code: payload.body.error.code }]"/>
+        </otherwise>
+      </choice>
+      <set-payload value="#[output application/json --- payload.body]" mimeType="application/json" doc:name="Error body"/>
+    </on-error-continue>
+  </error-handler>
+
+</mule>

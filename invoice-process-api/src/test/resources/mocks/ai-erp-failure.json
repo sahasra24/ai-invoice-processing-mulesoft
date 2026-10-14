@@ -1,0 +1,50 @@
+{
+  "requestId": "test",
+  "provider": "MOCK_DOCUMENT_AI",
+  "model": "mock-invoice-extractor-v1",
+  "status": "SUCCEEDED",
+  "pages": 1,
+  "warnings": [],
+  "processingTimeMs": 3,
+  "extraction": {
+    "invoice_number": "ERPFAIL-2026-0001",
+    "invoice_date": "2026-10-03",
+    "due_date": "2026-11-02",
+    "vendor_name": "Acme Office Supplies",
+    "vendor_id": "V-1001",
+    "purchase_order_number": "PO-2026-0005",
+    "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+    "currency": "USD",
+    "payment_terms": "Net 30",
+    "subtotal": "100.00",
+    "total_amount": "108.00",
+    "tax": "8.00",
+    "tax_rate": 0.08,
+    "line_items": [
+      {
+        "line_number": 1,
+        "item_code": "PEN-BLK-12",
+        "description": "Ballpoint Pens Black (box of 12)",
+        "quantity": "50",
+        "unit_price": "2.00",
+        "amount": "100.00"
+      }
+    ],
+    "field_confidence": {
+      "invoice_number": 0.96,
+      "invoice_date": 0.96,
+      "due_date": 0.97,
+      "vendor_name": 0.97,
+      "vendor_id": 0.97,
+      "purchase_order_number": 0.98,
+      "billing_address": 0.98,
+      "currency": 0.95,
+      "payment_terms": 0.99,
+      "subtotal": 0.97,
+      "total_amount": 0.99,
+      "tax": 0.99,
+      "line_items": 0.96
+    },
+    "overall_confidence": 0.968
+  }
+}

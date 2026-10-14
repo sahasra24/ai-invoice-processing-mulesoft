@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<APInvoiceResponse xmlns="urn:example:erp:ap:v1">
+  <Status>POSTED</Status>
+  <DocumentNumber>5100000042</DocumentNumber>
+  <FiscalYear>2026</FiscalYear>
+  <PostedAt>2026-10-13T09:00:06Z</PostedAt>
+  <ExternalReference>6f1c2a10-0000-4000-8000-000000000005</ExternalReference>
+</APInvoiceResponse>

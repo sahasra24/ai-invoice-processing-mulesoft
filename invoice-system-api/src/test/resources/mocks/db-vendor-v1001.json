@@ -1,0 +1,18 @@
+[
+  {
+    "vendor_id": "V-1001",
+    "vendor_name": "Acme Office Supplies",
+    "tax_id": "91-1000001",
+    "email": "billing@acme-office.example",
+    "phone": "+1-206-555-0101",
+    "address_line1": "100 Paper Lane",
+    "city": "Seattle",
+    "state": "WA",
+    "postal_code": "98101",
+    "country": "US",
+    "currency": "USD",
+    "default_tax_rate": 0.08,
+    "payment_terms": "NET30",
+    "status": "ACTIVE"
+  }
+]

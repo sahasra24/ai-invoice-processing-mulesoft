@@ -1,0 +1,141 @@
+{
+  "sampleFile": "pdf/INV-2026-1004_globex_price-variance.pdf",
+  "rawExtraction": {
+    "provider": "MOCK_DOCUMENT_AI",
+    "model": "mock-invoice-extractor-v1",
+    "warnings": [],
+    "extraction": {
+      "invoice_number": "INV-2026-1004",
+      "invoice_date": "2026-09-28",
+      "due_date": "2026-11-12",
+      "vendor_name": "Globex Industrial Parts",
+      "vendor_id": "V-1002",
+      "purchase_order_number": "PO-2026-0004",
+      "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+      "currency": "USD",
+      "payment_terms": "Net 45",
+      "subtotal": "1,350.00",
+      "total_amount": "1,458.00",
+      "tax": "108.00",
+      "tax_rate": 0.08,
+      "line_items": [
+        {
+          "line_number": 1,
+          "item_code": "BRG-6204",
+          "description": "Deep Groove Ball Bearing 6204",
+          "quantity": "100",
+          "unit_price": "13.50",
+          "amount": "1,350.00"
+        }
+      ],
+      "field_confidence": {
+        "invoice_number": 0.99,
+        "invoice_date": 0.96,
+        "due_date": 0.96,
+        "vendor_name": 0.99,
+        "vendor_id": 0.95,
+        "purchase_order_number": 0.99,
+        "billing_address": 0.98,
+        "currency": 0.95,
+        "payment_terms": 0.98,
+        "subtotal": 0.97,
+        "total_amount": 0.98,
+        "tax": 0.96,
+        "line_items": 0.96
+      },
+      "overall_confidence": 0.976
+    }
+  },
+  "canonicalInvoice": {
+    "invoiceNumber": "INV-2026-1004",
+    "normalizedInvoiceNumber": "INV20261004",
+    "invoiceDate": "2026-09-28",
+    "dueDate": "2026-11-12",
+    "dueDateDerived": false,
+    "vendor": {
+      "id": "V-1002",
+      "name": "Globex Industrial Parts"
+    },
+    "poNumber": "PO-2026-0004",
+    "billingAddress": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+    "currency": "USD",
+    "paymentTerms": "Net 45",
+    "lineItems": [
+      {
+        "lineNumber": 1,
+        "itemCode": "BRG-6204",
+        "description": "Deep Groove Ball Bearing 6204",
+        "quantity": 100,
+        "unitPrice": 13.5,
+        "amount": 1350,
+        "amountDerived": false
+      }
+    ],
+    "subtotal": 1350,
+    "tax": 108,
+    "taxRate": 0.08,
+    "total": 1458,
+    "extraction": {
+      "provider": "MOCK_DOCUMENT_AI",
+      "model": "mock-invoice-extractor-v1",
+      "overallConfidence": 0.976,
+      "fieldConfidence": {
+        "invoiceNumber": 0.99,
+        "invoiceDate": 0.96,
+        "vendorName": 0.99,
+        "vendorId": 0.95,
+        "poNumber": 0.99,
+        "billingAddress": 0.98,
+        "currency": 0.95,
+        "lineItems": 0.96,
+        "subtotal": 0.97,
+        "tax": 0.96,
+        "total": 0.98,
+        "paymentTerms": 0.98,
+        "dueDate": 0.96
+      },
+      "warnings": []
+    }
+  },
+  "routingDecision": {
+    "status": "MANUAL_REVIEW",
+    "autoApproved": false,
+    "approvalChain": [
+      "MANAGER"
+    ],
+    "approvalsRequired": 1,
+    "nextApprovalLevel": "MANAGER",
+    "duplicateOf": null,
+    "decisionReason": "Requires review: PO_AMOUNT_EXCEEDED, PRICE_VARIANCE",
+    "validationErrors": [],
+    "exceptions": [
+      {
+        "code": "PO_AMOUNT_EXCEEDED",
+        "severity": "REVIEW",
+        "message": "Invoice total 1458 exceeds the remaining PO amount 1296",
+        "details": {
+          "remaining": 1296,
+          "invoiced": 1458
+        }
+      },
+      {
+        "code": "PRICE_VARIANCE",
+        "severity": "REVIEW",
+        "message": "Line 1: unit price 13.5 vs PO 12 (12.5% > 2% tolerance)",
+        "details": {
+          "variancePct": 12.5
+        }
+      }
+    ],
+    "checks": {
+      "schemaValid": true,
+      "fieldsValid": true,
+      "vendorVerified": true,
+      "duplicateChecked": true,
+      "poMatched": false,
+      "totalsValid": true,
+      "taxValid": true,
+      "extractionConfidence": 0.976
+    }
+  }
+}

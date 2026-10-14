@@ -1,0 +1,2707 @@
+{
+  "info": {
+    "_postman_id": "dbd43a1a-28d4-5f04-a434-2bbcb1088efe",
+    "name": "AI Invoice Processing - MuleSoft",
+    "description": "End-to-end scenarios for the Experience API. Run the folders in order (Collection Runner) after loading the sample data. Set Settings > General > Working directory to the repository root so the file uploads resolve.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 Health",
+      "item": [
+        {
+          "name": "Experience API health",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = UP', () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 Happy path - upload & auto-approve",
+      "item": [
+        {
+          "name": "Upload PDF - auto-approved and posted to ERP (201)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/pdf/INV-2026-1001_acme_auto-approve.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/pdf/INV-2026-1001_acme_auto-approve.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "pm.test('status = POSTED_TO_ERP', () => pm.expect(pm.response.json().status).to.eql(\"POSTED_TO_ERP\"));",
+                  "if (pm.response.json().invoiceId) pm.collectionVariables.set('invAuto', pm.response.json().invoiceId);",
+                  "pm.test('ERP document number', () => pm.expect(pm.response.json().erp.documentNumber).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get invoice details",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invAuto}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invAuto}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = POSTED_TO_ERP', () => pm.expect(pm.response.json().status).to.eql(\"POSTED_TO_ERP\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get invoice status",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invAuto}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invAuto}}",
+                "status"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get processing history (audit trail)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invAuto}}/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invAuto}}",
+                "history"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('has audit events', () => pm.expect(pm.response.json().events.length).to.be.above(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Re-upload same file - idempotent replay (200)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/pdf/INV-2026-1001_acme_auto-approve.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/pdf/INV-2026-1001_acme_auto-approve.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('idempotentReplay = True', () => pm.expect(pm.response.json().idempotentReplay).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload PNG scan - auto-approved (201)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/images/INV-2026-1008_acme_scan.png"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/images/INV-2026-1008_acme_scan.png` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "pm.test('status = POSTED_TO_ERP', () => pm.expect(pm.response.json().status).to.eql(\"POSTED_TO_ERP\"));",
+                  "if (pm.response.json().invoiceId) pm.collectionVariables.set('invPng', pm.response.json().invoiceId);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 Approval workflows",
+      "item": [
+        {
+          "name": "Upload 5,400 invoice - needs APPROVER (201)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier2",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier2}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/pdf/INV-2026-1002_globex_single-approval.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/pdf/INV-2026-1002_globex_single-approval.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "pm.test('status = PENDING_APPROVAL', () => pm.expect(pm.response.json().status).to.eql(\"PENDING_APPROVAL\"));",
+                  "if (pm.response.json().invoiceId) pm.collectionVariables.set('invSingle', pm.response.json().invoiceId);",
+                  "pm.test('APPROVER level', () => pm.expect(pm.response.json().approval.chain).to.eql(['APPROVER']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Supplier cannot approve (403)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invSingle}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invSingle}}",
+                "approve"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"please\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approver approves -> APPROVED -> POSTED_TO_ERP",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "approver1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_approver1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invSingle}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invSingle}}",
+                "approve"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Goods received in full\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = POSTED_TO_ERP', () => pm.expect(pm.response.json().status).to.eql(\"POSTED_TO_ERP\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approving again -> 409 INVALID_INVOICE_STATE",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "manager1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_manager1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invSingle}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invSingle}}",
+                "approve"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"again\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload 64,800 invoice - MANAGER then FINANCE_DIRECTOR (201)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/pdf/INV-2026-1003_initech_two-level-approval.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/pdf/INV-2026-1003_initech_two-level-approval.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "pm.test('status = PENDING_APPROVAL', () => pm.expect(pm.response.json().status).to.eql(\"PENDING_APPROVAL\"));",
+                  "if (pm.response.json().invoiceId) pm.collectionVariables.set('invTwoLevel', pm.response.json().invoiceId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approver has insufficient authority (403)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "approver1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_approver1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invTwoLevel}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invTwoLevel}}",
+                "approve"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"ok\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "pm.test('code', () => pm.expect(pm.response.json().error.code).to.eql('INSUFFICIENT_APPROVAL_AUTHORITY'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Manager approves level 1 -> still PENDING_APPROVAL",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "manager1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_manager1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invTwoLevel}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invTwoLevel}}",
+                "approve"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Services delivered\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = PENDING_APPROVAL', () => pm.expect(pm.response.json().status).to.eql(\"PENDING_APPROVAL\"));",
+                  "pm.test('nextApprovalLevel = FINANCE_DIRECTOR', () => pm.expect(pm.response.json().nextApprovalLevel).to.eql(\"FINANCE_DIRECTOR\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Manager cannot approve twice (409)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "manager1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_manager1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invTwoLevel}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invTwoLevel}}",
+                "approve"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"again\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Finance director final approval -> POSTED_TO_ERP",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "director1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_director1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invTwoLevel}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invTwoLevel}}",
+                "approve"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Approved\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = POSTED_TO_ERP', () => pm.expect(pm.response.json().status).to.eql(\"POSTED_TO_ERP\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Structured JSON invoice (10% tax vendor) -> PENDING_APPROVAL",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "apclerk1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_apclerk1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/process",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "process"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invoice\": {\n    \"invoice_number\": \"INV-2026-1010\",\n    \"invoice_date\": \"2026-10-07\",\n    \"vendor_name\": \"Stark Precision Components\",\n    \"vendor_id\": \"V-1005\",\n    \"purchase_order_number\": \"PO-2026-0007\",\n    \"billing_address\": \"Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052\",\n    \"currency\": \"USD\",\n    \"line_items\": [\n      {\n        \"line_number\": 1,\n        \"item_code\": \"CNC-SHAFT-8\",\n        \"description\": \"CNC Machined Shaft 8mm\",\n        \"quantity\": 25,\n        \"unit_price\": 100.0,\n        \"amount\": 2500.0\n      }\n    ],\n    \"subtotal\": 2500.0,\n    \"tax_rate\": 0.1,\n    \"tax\": 250.0,\n    \"total_amount\": 2750.0,\n    \"payment_terms\": \"Net 30\",\n    \"due_date\": \"2026-11-06\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "pm.test('status = PENDING_APPROVAL', () => pm.expect(pm.response.json().status).to.eql(\"PENDING_APPROVAL\"));",
+                  "if (pm.response.json().invoiceId) pm.collectionVariables.set('invJson', pm.response.json().invoiceId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject without reason -> 400",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "approver1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_approver1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invJson}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invJson}}",
+                "reject"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject with reason -> REJECTED",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "approver1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_approver1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invJson}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invJson}}",
+                "reject"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Quantity does not match goods receipt\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = REJECTED', () => pm.expect(pm.response.json().status).to.eql(\"REJECTED\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 Exceptions & manual review",
+      "item": [
+        {
+          "name": "Duplicate invoice number (inv/2026/1001) -> 409 DUPLICATE",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/process",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "process"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invoice\": {\n    \"invoice_number\": \"inv/2026/1001\",\n    \"invoice_date\": \"2026-09-15\",\n    \"vendor_name\": \"Acme Office Supplies\",\n    \"vendor_id\": \"V-1001\",\n    \"purchase_order_number\": \"PO-2026-0001\",\n    \"billing_address\": \"Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052\",\n    \"currency\": \"USD\",\n    \"line_items\": [\n      {\n        \"line_number\": 1,\n        \"item_code\": \"PAP-A4-500\",\n        \"description\": \"A4 Copy Paper 80gsm (box of 5 reams)\",\n        \"quantity\": 100,\n        \"unit_price\": 5.0,\n        \"amount\": 500.0\n      },\n      {\n        \"line_number\": 2,\n        \"item_code\": \"TON-HP-26X\",\n        \"description\": \"HP 26X Black Toner Cartridge\",\n        \"quantity\": 10,\n        \"unit_price\": 30.0,\n        \"amount\": 300.0\n      }\n    ],\n    \"subtotal\": 800.0,\n    \"tax_rate\": 0.08,\n    \"tax\": 64.0,\n    \"total_amount\": 864.0,\n    \"payment_terms\": \"Net 30\",\n    \"due_date\": \"2026-10-15\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status = DUPLICATE', () => pm.expect(pm.response.json().status).to.eql(\"DUPLICATE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown vendor V-9999 -> 422 VALIDATION_FAILED",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/pdf/INV-2026-1005_unknown-vendor.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/pdf/INV-2026-1005_unknown-vendor.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "pm.test('status = VALIDATION_FAILED', () => pm.expect(pm.response.json().status).to.eql(\"VALIDATION_FAILED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Missing invoice number & total -> 422 VALIDATION_FAILED",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/pdf/INV-2026-1007_acme_missing-fields.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/pdf/INV-2026-1007_acme_missing-fields.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "pm.test('status = VALIDATION_FAILED', () => pm.expect(pm.response.json().status).to.eql(\"VALIDATION_FAILED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Incorrect totals -> MANUAL_REVIEW",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/pdf/INV-2026-1006_acme_incorrect-totals.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/pdf/INV-2026-1006_acme_incorrect-totals.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "pm.test('status = MANUAL_REVIEW', () => pm.expect(pm.response.json().status).to.eql(\"MANUAL_REVIEW\"));",
+                  "if (pm.response.json().invoiceId) pm.collectionVariables.set('invReview', pm.response.json().invoiceId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Price variance vs PO -> MANUAL_REVIEW",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier2",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier2}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/pdf/INV-2026-1004_globex_price-variance.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/pdf/INV-2026-1004_globex_price-variance.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "pm.test('status = MANUAL_REVIEW', () => pm.expect(pm.response.json().status).to.eql(\"MANUAL_REVIEW\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Blurry photo, low AI confidence -> MANUAL_REVIEW",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/images/INV-2026-1009_acme_blurry-photo.jpg"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/images/INV-2026-1009_acme_blurry-photo.jpg` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "pm.test('status = MANUAL_REVIEW', () => pm.expect(pm.response.json().status).to.eql(\"MANUAL_REVIEW\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Manager resolves manual review -> POSTED_TO_ERP",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "manager1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_manager1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invReview}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invReview}}",
+                "approve"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Credit note for 50.00 requested; pay as agreed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = POSTED_TO_ERP', () => pm.expect(pm.response.json().status).to.eql(\"POSTED_TO_ERP\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 Failures & recovery",
+      "item": [
+        {
+          "name": "AI service failure -> 202 EXTRACTION_FAILED (queued)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/pdf/ai-fail_scan_INV-2026-1011.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/pdf/ai-fail_scan_INV-2026-1011.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 202', () => pm.response.to.have.status(202));",
+                  "pm.test('status = EXTRACTION_FAILED', () => pm.expect(pm.response.json().status).to.eql(\"EXTRACTION_FAILED\"));",
+                  "if (pm.response.json().invoiceId) pm.collectionVariables.set('invAiFail', pm.response.json().invoiceId);",
+                  "pm.test('recovery.queued = True', () => pm.expect(pm.response.json().recovery.queued).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ERP outage -> 202 ERP_POSTING_FAILED (queued, recovers automatically)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/pdf/ERPFAIL-2026-0001_acme_erp-failure.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/pdf/ERPFAIL-2026-0001_acme_erp-failure.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 202', () => pm.response.to.have.status(202));",
+                  "pm.test('status = ERP_POSTING_FAILED', () => pm.expect(pm.response.json().status).to.eql(\"ERP_POSTING_FAILED\"));",
+                  "if (pm.response.json().invoiceId) pm.collectionVariables.set('invErpFail', pm.response.json().invoiceId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check ERP-failed invoice status (POSTED_TO_ERP after ~2-4 min)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invErpFail}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invErpFail}}",
+                "status"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 Security & validation",
+      "item": [
+        {
+          "name": "No credentials -> 401",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/pdf/INV-2026-1001_acme_auto-approve.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/pdf/INV-2026-1001_acme_auto-approve.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wrong role (approver uploads) -> 403",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "approver1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_approver1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/pdf/INV-2026-1001_acme_auto-approve.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/pdf/INV-2026-1001_acme_auto-approve.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unsupported file type .txt -> 415",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/invalid/not-an-invoice.txt"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/invalid/not-an-invoice.txt` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 415', () => pm.response.to.have.status(415));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Text file renamed to .pdf -> 415",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample-invoices/invalid/renamed-text-file.pdf"
+                },
+                {
+                  "key": "autoProcess",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "upload"
+              ]
+            },
+            "description": "Upload `sample-invoices/invalid/renamed-text-file.pdf` (set Postman Settings > Working directory to the repository root)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 415', () => pm.response.to.have.status(415));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Supplier cannot read another supplier's invoice -> 404",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier2",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier2}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invAuto}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invAuto}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Malformed invoiceId -> 400",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "manager1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_manager1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/not-a-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "not-a-uuid"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Supplier cannot view vendor master -> 403",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/vendors/V-1001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vendors",
+                "V-1001"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 Search & master data",
+      "item": [
+        {
+          "name": "List invoices (manager, pending approval)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "manager1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_manager1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices?status=PENDING_APPROVAL&page=1&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "PENDING_APPROVAL"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List invoices (supplier sees only own)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "supplier1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_supplier1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices?page=1&size=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('only own', () => pm.response.json().items.forEach(i => pm.expect(i.submittedBy).to.eql('supplier1')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid page size -> 400",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "manager1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_manager1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices?size=500",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "500"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get vendor V-1001",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "apclerk1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_apclerk1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/vendors/V-1001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vendors",
+                "V-1001"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('vendorName = Acme Office Supplies', () => pm.expect(pm.response.json().vendorName).to.eql(\"Acme Office Supplies\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get vendor V-9999 -> 404",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "apclerk1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_apclerk1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/vendors/V-9999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vendors",
+                "V-9999"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get purchase order PO-2026-0002",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "apclerk1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_apclerk1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase-orders/PO-2026-0002",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase-orders",
+                "PO-2026-0002"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get purchase order PO-NOPE -> 404",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "apclerk1",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pwd_apclerk1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase-orders/PO-NOPE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase-orders",
+                "PO-NOPE"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "90 Internal / mock services (debugging)",
+      "item": [
+        {
+          "name": "Mock services health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{mockUrl}}/health",
+              "host": [
+                "{{mockUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mock ERP - simulate outage (DOWN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"mode\": \"DOWN\"}"
+            },
+            "url": {
+              "raw": "{{mockUrl}}/erp/v1/admin/failure-mode",
+              "host": [
+                "{{mockUrl}}"
+              ],
+              "path": [
+                "erp",
+                "v1",
+                "admin",
+                "failure-mode"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mock ERP - restore (NORMAL)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"mode\": \"NORMAL\"}"
+            },
+            "url": {
+              "raw": "{{mockUrl}}/erp/v1/admin/failure-mode",
+              "host": [
+                "{{mockUrl}}"
+              ],
+              "path": [
+                "erp",
+                "v1",
+                "admin",
+                "failure-mode"
+              ]
+            }
+          }
+        },
+        {
+          "name": "System API - recovery queue (ops view)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "client_id",
+                "value": "{{internalClientId}}"
+              },
+              {
+                "key": "client_secret",
+                "value": "{{internalClientSecret}}"
+              }
+            ],
+            "url": {
+              "raw": "{{sysUrl}}/sys/v1/recovery-queue",
+              "host": [
+                "{{sysUrl}}"
+              ],
+              "path": [
+                "sys",
+                "v1",
+                "recovery-queue"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Process API health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{processUrl}}/process/v1/health",
+              "host": [
+                "{{processUrl}}"
+              ],
+              "path": [
+                "process",
+                "v1",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "System API health (DB check)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{sysUrl}}/sys/v1/health",
+              "host": [
+                "{{sysUrl}}"
+              ],
+              "path": [
+                "sys",
+                "v1",
+                "health"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "invAuto",
+      "value": ""
+    },
+    {
+      "key": "invPng",
+      "value": ""
+    },
+    {
+      "key": "invSingle",
+      "value": ""
+    },
+    {
+      "key": "invTwoLevel",
+      "value": ""
+    },
+    {
+      "key": "invJson",
+      "value": ""
+    },
+    {
+      "key": "invReview",
+      "value": ""
+    },
+    {
+      "key": "invAiFail",
+      "value": ""
+    },
+    {
+      "key": "invErpFail",
+      "value": ""
+    }
+  ]
+}

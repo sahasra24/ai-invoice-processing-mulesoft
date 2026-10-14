@@ -1,0 +1,107 @@
+{
+  "sampleFile": "json/INV-2026-1010_stark_structured.json",
+  "rawExtraction": {
+    "provider": "JSON_UPLOAD",
+    "model": null,
+    "warnings": [],
+    "extraction": {
+      "invoice_number": "INV-2026-1010",
+      "invoice_date": "2026-10-07",
+      "vendor_name": "Stark Precision Components",
+      "vendor_id": "V-1005",
+      "purchase_order_number": "PO-2026-0007",
+      "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+      "currency": "USD",
+      "line_items": [
+        {
+          "line_number": 1,
+          "item_code": "CNC-SHAFT-8",
+          "description": "CNC Machined Shaft 8mm",
+          "quantity": 25,
+          "unit_price": 100.0,
+          "amount": 2500.0
+        }
+      ],
+      "subtotal": 2500.0,
+      "tax_rate": 0.1,
+      "tax": 250.0,
+      "total_amount": 2750.0,
+      "payment_terms": "Net 30",
+      "due_date": "2026-11-06"
+    }
+  },
+  "canonicalInvoice": {
+    "invoiceNumber": "INV-2026-1010",
+    "normalizedInvoiceNumber": "INV20261010",
+    "invoiceDate": "2026-10-07",
+    "dueDate": "2026-11-06",
+    "dueDateDerived": false,
+    "vendor": {
+      "id": "V-1005",
+      "name": "Stark Precision Components"
+    },
+    "poNumber": "PO-2026-0007",
+    "billingAddress": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+    "currency": "USD",
+    "paymentTerms": "Net 30",
+    "lineItems": [
+      {
+        "lineNumber": 1,
+        "itemCode": "CNC-SHAFT-8",
+        "description": "CNC Machined Shaft 8mm",
+        "quantity": 25,
+        "unitPrice": 100.0,
+        "amount": 2500,
+        "amountDerived": false
+      }
+    ],
+    "subtotal": 2500,
+    "tax": 250,
+    "taxRate": 0.1,
+    "total": 2750,
+    "extraction": {
+      "provider": "JSON_UPLOAD",
+      "model": null,
+      "overallConfidence": 1,
+      "fieldConfidence": {
+        "invoiceNumber": 1,
+        "invoiceDate": 1,
+        "vendorName": 1,
+        "vendorId": 1,
+        "poNumber": 1,
+        "billingAddress": 1,
+        "currency": 1,
+        "lineItems": 1,
+        "subtotal": 1,
+        "tax": 1,
+        "total": 1,
+        "paymentTerms": 1,
+        "dueDate": 1
+      },
+      "warnings": []
+    }
+  },
+  "routingDecision": {
+    "status": "PENDING_APPROVAL",
+    "autoApproved": false,
+    "approvalChain": [
+      "APPROVER"
+    ],
+    "approvalsRequired": 1,
+    "nextApprovalLevel": "APPROVER",
+    "duplicateOf": null,
+    "decisionReason": "Approval required: APPROVER",
+    "validationErrors": [],
+    "exceptions": [],
+    "checks": {
+      "schemaValid": true,
+      "fieldsValid": true,
+      "vendorVerified": true,
+      "duplicateChecked": true,
+      "poMatched": true,
+      "totalsValid": true,
+      "taxValid": true,
+      "extractionConfidence": 1
+    }
+  }
+}

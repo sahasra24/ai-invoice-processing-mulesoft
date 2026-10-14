@@ -1,0 +1,32 @@
+# MUnit configuration (selected with -Denv=test, set by munit-maven-plugin)
+DB_HOST: "localhost"
+DB_PORT: "3306"
+DB_NAME: "invoice_db"
+DB_USER: "invoice_app"
+DB_PASSWORD: "ChangeMe_Local_2026!"
+INTERNAL_CLIENT_ID: "test-client"
+INTERNAL_CLIENT_SECRET: "test-secret"
+ERP_HOST: "localhost"
+ERP_PORT: "8090"
+ERP_PROTOCOL: "HTTP"
+ERP_USERNAME: "erp_integration"
+ERP_PASSWORD: "erp-local-pass"
+DOCUMENT_STORAGE_DIR: "target/test-documents"
+http:
+  host: "0.0.0.0"
+  port: "18083"
+db:
+  maxPoolSize: "2"
+  minPoolSize: "0"
+  queryTimeoutSec: "5"
+  reconnectFrequencyMs: "500"
+  reconnectAttempts: "1"
+erp:
+  basePath: "/erp/v1"
+  timeoutMs: "2000"
+  retry:
+    maxRetries: "1"
+    intervalMs: "10"
+query:
+  maxPageSize: "100"
+  duplicateDateWindowDays: "7"

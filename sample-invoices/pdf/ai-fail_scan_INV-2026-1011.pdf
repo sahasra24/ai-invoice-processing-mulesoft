@@ -1,0 +1,57 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 1123 >>
+stream
+BT /F1 20 Tf 40 790 Td (INVOICE) Tj ET
+BT /F1 11 Tf 40 761 Td (Acme Office Supplies) Tj ET
+BT /F1 10 Tf 40 741 Td (Vendor: Acme Office Supplies) Tj ET
+BT /F1 10 Tf 40 722 Td (Vendor ID: V-1001) Tj ET
+BT /F1 10 Tf 40 703 Td (Invoice Number: INV-2026-1011) Tj ET
+BT /F1 10 Tf 40 684 Td (Invoice Date: 2026-10-04) Tj ET
+BT /F1 10 Tf 40 665 Td (PO Number: PO-2026-0008) Tj ET
+BT /F1 10 Tf 40 646 Td (Bill To: Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052) Tj ET
+BT /F1 10 Tf 40 627 Td (Currency: USD) Tj ET
+BT /F1 10 Tf 40 608 Td (Payment Terms: Net 30) Tj ET
+BT /F1 10 Tf 40 589 Td (Due Date: 2026-11-03) Tj ET
+BT /F2 8 Tf 40 570 Td (Line  Item Code     Description                                  Qty  Unit Price       Amount) Tj ET
+BT /F2 8 Tf 40 553 Td (1     NTB-A5-DOT    A5 Dotted Notebook                             5        3.00        15.00) Tj ET
+BT /F1 10 Tf 40 536 Td (Subtotal: 15.00) Tj ET
+BT /F1 10 Tf 40 517 Td (Tax \(8%\): 1.20) Tj ET
+BT /F1 12 Tf 40 498 Td (Total Due: 16.20) Tj ET
+BT /F1 8 Tf 40 477 Td (Thank you for your business. Please quote the invoice number on remittance.) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+7 0 obj
+<< /Title (INV-2026-1011) /Producer (generate_samples.py) >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000121 00000 n 
+0000000257 00000 n 
+0000001432 00000 n 
+0000001502 00000 n 
+0000001570 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R /Info 7 0 R >>
+startxref
+1646
+%%EOF

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+        http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd">
+
+  <!-- ============================================================
+       Properties
+       env      : local | test | prod   (override: -Denv=prod)
+       mule.key : decryption key for secure-*.yaml (override: -Dmule.key=...)
+                  The default below only decrypts nothing (secure-local.yaml
+                  holds no secrets). ALWAYS pass a real key outside local.
+       ============================================================ -->
+  <global-property doc:name="Default environment" name="env" value="local"/>
+  <global-property doc:name="Default secure key (local only)" name="mule.key" value="LocalOnlyKey2026"/>
+
+  <configuration-properties doc:name="Environment properties" file="config/${env}.yaml"/>
+
+  <secure-properties:config name="secure-properties-config" doc:name="Secure Properties"
+                            file="config/secure-${env}.yaml" key="${mule.key}">
+    <secure-properties:encrypt algorithm="AES" mode="CBC"/>
+  </secure-properties:config>
+
+  <configuration doc:name="Default error handler" defaultErrorHandler-ref="global-error-handler"/>
+
+  <!-- ============================================================
+       HTTP listener (internal API - reachable only from the Process
+       and Experience APIs; protect with client credentials + network)
+       ============================================================ -->
+  <http:listener-config name="sys-api-listener-config" doc:name="System API listener">
+    <http:listener-connection host="${http.host}" port="${http.port}"/>
+  </http:listener-config>
+
+  <!-- ============================================================
+       MySQL - parameterized queries only, pooled, auto-reconnect
+       ============================================================ -->
+  <db:config name="invoice-db-config" doc:name="Invoice DB (MySQL)">
+    <db:my-sql-connection host="${DB_HOST}" port="${DB_PORT}" user="${DB_USER}"
+                          password="${DB_PASSWORD}" database="${DB_NAME}">
+      <reconnection>
+        <reconnect frequency="${db.reconnectFrequencyMs}" count="${db.reconnectAttempts}"/>
+      </reconnection>
+      <db:pooling-profile maxPoolSize="${db.maxPoolSize}" minPoolSize="${db.minPoolSize}"
+                          acquireIncrement="1" maxWait="10" maxWaitUnit="SECONDS"/>
+      <db:connection-properties>
+        <db:connection-property key="serverTimezone" value="UTC"/>
+        <db:connection-property key="useUnicode" value="true"/>
+        <db:connection-property key="characterEncoding" value="UTF-8"/>
+      </db:connection-properties>
+    </db:my-sql-connection>
+  </db:config>
+
+  <!-- ============================================================
+       Document storage (local folder; swap for S3/Azure Blob connector)
+       ============================================================ -->
+  <file:config name="document-storage-config" doc:name="Document storage">
+    <file:connection workingDir="${DOCUMENT_STORAGE_DIR}"/>
+  </file:config>
+
+  <!-- ============================================================
+       Simulated ERP (XML over HTTP, Basic auth)
+       ============================================================ -->
+  <http:request-config name="erp-request-config" doc:name="ERP API" basePath="${erp.basePath}"
+                       responseTimeout="${erp.timeoutMs}">
+    <http:request-connection host="${ERP_HOST}" port="${ERP_PORT}" protocol="${ERP_PROTOCOL}">
+      <http:authentication>
+        <http:basic-authentication username="${ERP_USERNAME}" password="${ERP_PASSWORD}" preemptive="true"/>
+      </http:authentication>
+    </http:request-connection>
+  </http:request-config>
+
+  <!-- ============================================================
+       Internal client authentication (client_id / client_secret headers)
+       In CloudHub, replace with an API Manager "Client ID Enforcement" policy.
+       ============================================================ -->
+  <sub-flow name="sys-client-auth-sub-flow" doc:id="sys-client-auth-sub-flow">
+    <choice doc:name="Valid client credentials?">
+      <when expression="#[(attributes.headers.client_id default '') == Mule::p('INTERNAL_CLIENT_ID') and (attributes.headers.client_secret default '') == Mule::p('INTERNAL_CLIENT_SECRET')]">
+        <logger level="DEBUG" doc:name="Client authenticated" category="invoice.system.security"
+                message="#[output application/json indent=false --- { event: 'client.authenticated', clientId: attributes.headers.client_id }]"/>
+      </when>
+      <otherwise>
+        <raise-error doc:name="Raise APP:UNAUTHORIZED" type="APP:UNAUTHORIZED"
+                     description="Missing or invalid client_id / client_secret headers"/>
+      </otherwise>
+    </choice>
+  </sub-flow>
+
+  <!-- ============================================================
+       Global error handler: every error -> consistent JSON error body
+       with an HTTP status (see dwl/error-response.dwl). Payloads and
+       credentials are never logged.
+       ============================================================ -->
+  <error-handler name="global-error-handler" doc:name="Global error handler">
+    <on-error-continue type="ANY" enableNotifications="true" logException="false" doc:name="On any error">
+      <set-variable variableName="correlationIdValue" value="#[correlationId]" doc:name="Capture correlation id"/>
+      <ee:transform doc:name="Map error to HTTP response">
+        <ee:message>
+          <ee:set-payload resource="dwl/error-response.dwl"/>
+        </ee:message>
+      </ee:transform>
+      <set-variable variableName="httpStatus" value="#[payload.httpStatus]" doc:name="Set httpStatus"/>
+      <choice doc:name="Server or client error?">
+        <when expression="#[vars.httpStatus &gt;= 500]">
+          <logger level="ERROR" doc:name="Log server error" category="invoice.system.error"
+                  message="#[output application/json indent=false --- { event: 'request.failed', httpStatus: vars.httpStatus, errorType: (error.errorType.namespace default '') ++ ':' ++ (error.errorType.identifier default ''), detail: error.description, flow: error.failingComponent default null }]"/>
+        </when>
+        <otherwise>
+          <logger level="WARN" doc:name="Log client error" category="invoice.system.error"
+                  message="#[output application/json indent=false --- { event: 'request.rejected', httpStatus: vars.httpStatus, code: payload.body.error.code }]"/>
+        </otherwise>
+      </choice>
+      <set-payload value="#[output application/json --- payload.body]" mimeType="application/json" doc:name="Error body"/>
+    </on-error-continue>
+  </error-handler>
+
+</mule>

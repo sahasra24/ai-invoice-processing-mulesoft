@@ -1,0 +1,5 @@
+{
+  "minMuleVersion": "4.9.0",
+  "javaSpecificationVersions": ["17"],
+  "secureProperties": ["mule.key", "PROCESS_API_CLIENT_SECRET", "INTERNAL_CLIENT_SECRET"]
+}

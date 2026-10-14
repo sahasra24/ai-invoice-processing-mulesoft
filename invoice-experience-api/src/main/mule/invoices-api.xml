@@ -1,0 +1,459 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+
+  <!-- =====================================================================
+       POST /api/invoices/upload     (multipart/form-data: file, autoProcess?)
+       Roles: SUPPLIER, AP_CLERK, ADMIN
+       ===================================================================== -->
+  <flow name="post-invoice-upload-flow">
+    <http:listener config-ref="experience-api-listener-config" path="/api/invoices/upload" allowedMethods="POST" doc:name="POST /api/invoices/upload">
+      <http:response statusCode="#[vars.httpStatus default 201]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('Idempotent-Replay': 'true') if (vars.idempotentReplay default false)}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('WWW-Authenticate': 'Basic realm="invoice-api"') if (vars.httpStatus == 401)}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="authenticate-sub-flow" doc:name="Authenticate"/>
+    <set-variable variableName="requiredRoles" value="#[['SUPPLIER', 'AP_CLERK', 'ADMIN']]" doc:name="Required roles"/>
+    <flow-ref name="authorize-sub-flow" doc:name="Authorize"/>
+    <choice doc:name="Request acceptable?">
+      <when expression="#[not ((lower(attributes.headers.'content-type' default '')) startsWith 'multipart/form-data')]">
+        <set-variable variableName="errorOverride" doc:name="415 details"
+                      value="#[{ httpStatus: 415, code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Use multipart/form-data with a field named file' }]"/>
+        <raise-error type="APP:UNSUPPORTED_MEDIA_TYPE" description="Not multipart" doc:name="Raise 415"/>
+      </when>
+      <when expression="#[((attributes.headers.'content-length' default '0') as Number) &gt; (Mule::p('upload.maxFileSizeBytes') as Number) + 1048576]">
+        <!-- reject oversized requests before parsing the body -->
+        <set-variable variableName="errorOverride" doc:name="413 details"
+                      value="#[{ httpStatus: 413, code: 'FILE_TOO_LARGE', message: 'Request exceeds the maximum upload size of ' ++ Mule::p('upload.maxFileSizeBytes') ++ ' bytes' }]"/>
+        <raise-error type="APP:PAYLOAD_TOO_LARGE" description="Too large" doc:name="Raise 413"/>
+      </when>
+    </choice>
+    <flow-ref name="idempotency-lookup-sub-flow" doc:name="Idempotency lookup"/>
+    <choice doc:name="Replay?">
+      <when expression="#[not vars.idempotentReplay]">
+        <ee:transform doc:name="Extract file part">
+          <ee:message>
+            <ee:set-payload resource="dwl/extract-upload-part.dwl"/>
+          </ee:message>
+        </ee:transform>
+        <set-variable variableName="autoProcess" value="#[payload.autoProcess]" doc:name="autoProcess"/>
+        <set-variable variableName="config" value="#[{ maxFileSizeBytes: Mule::p('upload.maxFileSizeBytes') as Number }]" doc:name="Upload limits"/>
+        <ee:transform doc:name="Validate upload">
+          <ee:variables>
+            <ee:set-variable variableName="upload" resource="dwl/upload-validation.dwl"/>
+          </ee:variables>
+        </ee:transform>
+        <choice doc:name="Valid file?">
+          <when expression="#[not vars.upload.valid]">
+            <set-variable variableName="errorOverride" doc:name="Validation details"
+                          value="#[{ httpStatus: vars.upload.httpStatus, code: vars.upload.errorCode, message: vars.upload.message }]"/>
+            <raise-error type="APP:BAD_REQUEST" description="Invalid upload" doc:name="Raise validation error"/>
+          </when>
+        </choice>
+        <logger level="INFO" doc:name="Log upload" category="invoice.experience"
+                message="#[output application/json indent=false --- { event: 'invoice.upload.accepted', user: vars.user.username, mimeType: vars.upload.mimeType, sizeBytes: vars.upload.sizeBytes }]"/>
+        <http:request method="POST" config-ref="process-api-request-config" path="/invoices" doc:name="PROCESS - Create and process invoice">
+          <http:body><![CDATA[#[output application/json --- {
+  sourceChannel: 'API_UPLOAD',
+  submittedBy: vars.user.username,
+  autoProcess: vars.autoProcess,
+  document: {
+    fileName: vars.upload.fileName,
+    mimeType: vars.upload.mimeType,
+    sizeBytes: vars.upload.sizeBytes,
+    sha256: vars.upload.sha256,
+    contentBase64: vars.upload.contentBase64
+  }
+}]]]></http:body>
+          <http:headers><![CDATA[#[{ client_id: Mule::p('PROCESS_API_CLIENT_ID'), client_secret: Mule::p('PROCESS_API_CLIENT_SECRET'), 'X-Correlation-ID': correlationId }]]]></http:headers>
+          <http:response-validator>
+            <http:success-status-code-validator values="200..499"/>
+          </http:response-validator>
+        </http:request>
+        <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+        <ee:transform doc:name="HTTP status from result">
+          <ee:variables>
+            <ee:set-variable variableName="httpStatus" resource="dwl/result-http-status.dwl"/>
+          </ee:variables>
+        </ee:transform>
+        <flow-ref name="idempotency-save-sub-flow" doc:name="Idempotency save"/>
+      </when>
+    </choice>
+  </flow>
+
+  <!-- =====================================================================
+       POST /api/invoices/process
+       Body A: { "invoiceId": "..." }            -> (re)process a stored invoice
+       Body B: { "invoice": { supplier JSON } }  -> submit a structured invoice
+       Roles: SUPPLIER, AP_CLERK, ADMIN
+       ===================================================================== -->
+  <flow name="post-invoice-process-flow">
+    <http:listener config-ref="experience-api-listener-config" path="/api/invoices/process" allowedMethods="POST" doc:name="POST /api/invoices/process">
+      <http:response statusCode="#[vars.httpStatus default 201]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('Idempotent-Replay': 'true') if (vars.idempotentReplay default false)}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('WWW-Authenticate': 'Basic realm="invoice-api"') if (vars.httpStatus == 401)}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="authenticate-sub-flow" doc:name="Authenticate"/>
+    <set-variable variableName="requiredRoles" value="#[['SUPPLIER', 'AP_CLERK', 'ADMIN']]" doc:name="Required roles"/>
+    <flow-ref name="authorize-sub-flow" doc:name="Authorize"/>
+    <validation:is-true doc:name="JSON body" message="Content-Type must be application/json"
+                        expression="#[(lower(attributes.headers.'content-type' default '')) startsWith 'application/json']"/>
+    <set-variable variableName="body" value="#[payload]" doc:name="Keep body"/>
+    <flow-ref name="idempotency-lookup-sub-flow" doc:name="Idempotency lookup"/>
+    <choice doc:name="Replay?">
+      <when expression="#[not vars.idempotentReplay]">
+        <choice doc:name="Which form?">
+          <when expression="#[vars.body.invoiceId != null]">
+            <validation:matches-regex doc:name="invoiceId is a UUID" value="#[vars.body.invoiceId]"
+                                      regex="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" message="invoiceId must be a UUID"/>
+            <http:request method="POST" config-ref="process-api-request-config" path="/invoices/{invoiceId}/process" doc:name="PROCESS - Reprocess invoice">
+              <http:headers><![CDATA[#[{ client_id: Mule::p('PROCESS_API_CLIENT_ID'), client_secret: Mule::p('PROCESS_API_CLIENT_SECRET'), 'X-Correlation-ID': correlationId }]]]></http:headers>
+              <http:uri-params><![CDATA[#[{ invoiceId: vars.body.invoiceId }]]]></http:uri-params>
+              <http:response-validator>
+                <http:success-status-code-validator values="200..499"/>
+              </http:response-validator>
+            </http:request>
+          </when>
+          <when expression="#[vars.body.invoice is Object]">
+            <ee:transform doc:name="JSON invoice as document">
+              <ee:variables>
+                <ee:set-variable variableName="document"><![CDATA[%dw 2.0
+output application/java
+import * from dw::core::Binaries
+import hashWith from dw::Crypto
+var json = write(vars.body.invoice, "application/json", { indent: false })
+var bytes = json as Binary { encoding: "UTF-8" }
+var name = (vars.body.invoice.invoice_number default "invoice") as String
+---
+{
+  fileName: "api-" ++ (name replace /[^A-Za-z0-9._\-]/ with "_") ++ ".json",
+  mimeType: "application/json",
+  sizeBytes: sizeOf(json),
+  sha256: lower(toHex(hashWith(bytes, "SHA-256"))),
+  contentBase64: toBase64(bytes)
+}]]></ee:set-variable>
+              </ee:variables>
+            </ee:transform>
+            <validation:is-true doc:name="Within size limit" message="Invoice JSON is too large"
+                                expression="#[vars.document.sizeBytes &lt;= (Mule::p('upload.maxFileSizeBytes') as Number)]"/>
+            <http:request method="POST" config-ref="process-api-request-config" path="/invoices" doc:name="PROCESS - Create and process JSON invoice">
+              <http:body><![CDATA[#[output application/json --- { sourceChannel: 'API_JSON', submittedBy: vars.user.username, autoProcess: true, document: vars.document }]]]></http:body>
+              <http:headers><![CDATA[#[{ client_id: Mule::p('PROCESS_API_CLIENT_ID'), client_secret: Mule::p('PROCESS_API_CLIENT_SECRET'), 'X-Correlation-ID': correlationId }]]]></http:headers>
+              <http:response-validator>
+                <http:success-status-code-validator values="200..499"/>
+              </http:response-validator>
+            </http:request>
+          </when>
+          <otherwise>
+            <set-variable variableName="errorOverride" doc:name="400 details"
+                          value="#[{ httpStatus: 400, code: 'BAD_REQUEST', message: 'Body must contain either invoiceId or invoice' }]"/>
+            <raise-error type="APP:BAD_REQUEST" description="Invalid body" doc:name="Raise 400"/>
+          </otherwise>
+        </choice>
+        <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+        <ee:transform doc:name="HTTP status from result">
+          <ee:variables>
+            <ee:set-variable variableName="httpStatus" resource="dwl/result-http-status.dwl"/>
+          </ee:variables>
+        </ee:transform>
+        <flow-ref name="idempotency-save-sub-flow" doc:name="Idempotency save"/>
+      </when>
+    </choice>
+  </flow>
+
+  <!-- =====================================================================
+       GET /api/invoices/{invoiceId}          (all roles; suppliers: own only)
+       GET /api/invoices/{invoiceId}/status
+       GET /api/invoices/{invoiceId}/history
+       ===================================================================== -->
+  <flow name="get-invoice-flow">
+    <http:listener config-ref="experience-api-listener-config" path="/api/invoices/{invoiceId}" allowedMethods="GET" doc:name="GET /api/invoices/{invoiceId}">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('WWW-Authenticate': 'Basic realm="invoice-api"') if (vars.httpStatus == 401)}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="authenticate-sub-flow" doc:name="Authenticate"/>
+    <flow-ref name="load-visible-invoice-sub-flow" doc:name="Load invoice"/>
+    <ee:transform doc:name="Public view">
+      <ee:message>
+        <ee:set-payload resource="dwl/invoice-public-view.dwl"/>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+  <flow name="get-invoice-status-flow">
+    <http:listener config-ref="experience-api-listener-config" path="/api/invoices/{invoiceId}/status" allowedMethods="GET" doc:name="GET /api/invoices/{invoiceId}/status">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('WWW-Authenticate': 'Basic realm="invoice-api"') if (vars.httpStatus == 401)}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="authenticate-sub-flow" doc:name="Authenticate"/>
+    <flow-ref name="load-visible-invoice-sub-flow" doc:name="Load invoice"/>
+    <ee:transform doc:name="Status view">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var chain = (payload.approvalChain default "") splitBy "," filter (!isEmpty($))
+var received = (payload.approvalsReceived default 0) as Number
+var DESCRIPTIONS = {
+  RECEIVED: "Document stored, waiting to be processed",
+  PROCESSING: "AI extraction and validation in progress",
+  EXTRACTION_FAILED: "AI extraction failed; an automatic retry is scheduled",
+  VALIDATION_FAILED: "The invoice is incomplete or invalid and cannot be paid; please resubmit a corrected invoice",
+  DUPLICATE: "This invoice was already submitted",
+  MANUAL_REVIEW: "An accounts payable specialist is reviewing exceptions",
+  PENDING_APPROVAL: "Waiting for approval",
+  APPROVED: "Approved; being transferred to the ERP",
+  REJECTED: "Rejected",
+  POSTED_TO_ERP: "Booked in the ERP for payment",
+  ERP_POSTING_FAILED: "Approved; ERP transfer failed and will be retried automatically",
+  FAILED: "Processing failed permanently; the AP team has been notified"
+}
+---
+{
+  invoiceId: payload.invoiceId,
+  invoiceNumber: payload.invoiceNumber,
+  status: payload.status,
+  statusDescription: DESCRIPTIONS[payload.status],
+  approvalsRequired: payload.approvalsRequired,
+  approvalsReceived: received,
+  nextApprovalLevel: if (["PENDING_APPROVAL", "MANUAL_REVIEW"] contains payload.status) chain[received] else null,
+  erpDocumentNumber: payload.erpDocumentNumber,
+  openIssues: sizeOf(payload.validationErrors default []) + sizeOf((payload.exceptions default []) filter ($.severity == "REVIEW")),
+  lastUpdated: payload.updatedAt
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+  <flow name="get-invoice-history-flow">
+    <http:listener config-ref="experience-api-listener-config" path="/api/invoices/{invoiceId}/history" allowedMethods="GET" doc:name="GET /api/invoices/{invoiceId}/history">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('WWW-Authenticate': 'Basic realm="invoice-api"') if (vars.httpStatus == 401)}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="authenticate-sub-flow" doc:name="Authenticate"/>
+    <flow-ref name="load-visible-invoice-sub-flow" doc:name="Load invoice (ownership check)"/>
+    <http:request method="GET" config-ref="sys-api-request-config" path="/invoices/{invoiceId}/history" doc:name="SYS - Get history">
+      <http:headers><![CDATA[#[{ client_id: Mule::p('INTERNAL_CLIENT_ID'), client_secret: Mule::p('INTERNAL_CLIENT_SECRET'), 'X-Correlation-ID': correlationId }]]]></http:headers>
+      <http:uri-params><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></http:uri-params>
+      <http:response-validator>
+        <http:success-status-code-validator values="200..499"/>
+      </http:response-validator>
+    </http:request>
+    <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+  </flow>
+
+  <!-- shared: validate id, load from System API, apply supplier ownership rule -->
+  <sub-flow name="load-visible-invoice-sub-flow">
+    <set-variable variableName="invoiceId" value="#[attributes.uriParams.invoiceId]" doc:name="invoiceId"/>
+    <validation:matches-regex doc:name="invoiceId is a UUID" value="#[vars.invoiceId]"
+                              regex="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" message="invoiceId must be a UUID"/>
+    <http:request method="GET" config-ref="sys-api-request-config" path="/invoices/{invoiceId}" doc:name="SYS - Get invoice">
+      <http:headers><![CDATA[#[{ client_id: Mule::p('INTERNAL_CLIENT_ID'), client_secret: Mule::p('INTERNAL_CLIENT_SECRET'), 'X-Correlation-ID': correlationId }]]]></http:headers>
+      <http:uri-params><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></http:uri-params>
+      <http:response-validator>
+        <http:success-status-code-validator values="200..499"/>
+      </http:response-validator>
+    </http:request>
+    <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+    <flow-ref name="enforce-ownership-sub-flow" doc:name="Ownership"/>
+  </sub-flow>
+
+  <!-- =====================================================================
+       GET /api/invoices?status=&vendorId=&fromDate=&toDate=&page=&size=
+       Suppliers always see only their own submissions.
+       ===================================================================== -->
+  <flow name="list-invoices-flow">
+    <http:listener config-ref="experience-api-listener-config" path="/api/invoices" allowedMethods="GET" doc:name="GET /api/invoices">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('WWW-Authenticate': 'Basic realm="invoice-api"') if (vars.httpStatus == 401)}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="authenticate-sub-flow" doc:name="Authenticate"/>
+    <set-variable variableName="q" value="#[attributes.queryParams]" doc:name="Query params"/>
+    <validation:is-true doc:name="Valid paging" message="page must be >= 1 and size between 1 and 100"
+                        expression="#[((vars.q.page default '1') matches /^\d+$/) and ((vars.q.size default '20') matches /^\d+$/) and ((vars.q.page default '1') as Number) &gt;= 1 and ((vars.q.size default '20') as Number) &gt;= 1 and ((vars.q.size default '20') as Number) &lt;= 100]"/>
+    <validation:is-true doc:name="Valid status filter" message="Unknown status filter"
+                        expression="#[vars.q.status == null or (['RECEIVED','PROCESSING','EXTRACTION_FAILED','VALIDATION_FAILED','DUPLICATE','MANUAL_REVIEW','PENDING_APPROVAL','APPROVED','REJECTED','POSTED_TO_ERP','ERP_POSTING_FAILED','FAILED'] contains vars.q.status)]"/>
+    <validation:is-true doc:name="Valid dates" message="fromDate / toDate must be YYYY-MM-DD"
+                        expression="#[(vars.q.fromDate == null or (vars.q.fromDate matches /^\d{4}-\d{2}-\d{2}$/)) and (vars.q.toDate == null or (vars.q.toDate matches /^\d{4}-\d{2}-\d{2}$/))]"/>
+    <http:request method="GET" config-ref="sys-api-request-config" path="/invoices" doc:name="SYS - List invoices">
+      <http:headers><![CDATA[#[{ client_id: Mule::p('INTERNAL_CLIENT_ID'), client_secret: Mule::p('INTERNAL_CLIENT_SECRET'), 'X-Correlation-ID': correlationId }]]]></http:headers>
+      <http:query-params><![CDATA[#[%dw 2.0
+var isSupplierOnly = (vars.user.roles default []) == ['SUPPLIER']
+---
+{
+  (status: vars.q.status) if (vars.q.status != null),
+  (vendorId: vars.q.vendorId) if (vars.q.vendorId != null),
+  (fromDate: vars.q.fromDate) if (vars.q.fromDate != null),
+  (toDate: vars.q.toDate) if (vars.q.toDate != null),
+  (submittedBy: vars.user.username) if (isSupplierOnly),
+  page: vars.q.page default '1',
+  size: vars.q.size default '20'
+}]]]></http:query-params>
+      <http:response-validator>
+        <http:success-status-code-validator values="200..499"/>
+      </http:response-validator>
+    </http:request>
+    <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+  </flow>
+
+  <!-- =====================================================================
+       POST /api/invoices/{invoiceId}/approve   { "comments": "..." }
+       POST /api/invoices/{invoiceId}/reject    { "reason": "..." }
+       Roles: APPROVER, MANAGER, FINANCE_DIRECTOR (level checks in the Process API)
+       ===================================================================== -->
+  <flow name="approve-invoice-flow">
+    <http:listener config-ref="experience-api-listener-config" path="/api/invoices/{invoiceId}/approve" allowedMethods="POST" doc:name="POST /api/invoices/{invoiceId}/approve">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('Idempotent-Replay': 'true') if (vars.idempotentReplay default false)}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('WWW-Authenticate': 'Basic realm="invoice-api"') if (vars.httpStatus == 401)}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <set-variable variableName="decision" value="APPROVE" doc:name="decision = APPROVE"/>
+    <set-variable variableName="comments" value="#[payload.comments default null]" doc:name="comments"/>
+    <flow-ref name="submit-decision-sub-flow" doc:name="Submit decision"/>
+  </flow>
+
+  <flow name="reject-invoice-flow">
+    <http:listener config-ref="experience-api-listener-config" path="/api/invoices/{invoiceId}/reject" allowedMethods="POST" doc:name="POST /api/invoices/{invoiceId}/reject">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('Idempotent-Replay': 'true') if (vars.idempotentReplay default false)}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('WWW-Authenticate': 'Basic realm="invoice-api"') if (vars.httpStatus == 401)}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <set-variable variableName="decision" value="REJECT" doc:name="decision = REJECT"/>
+    <set-variable variableName="comments" value="#[payload.reason default (payload.comments default null)]" doc:name="reason"/>
+    <flow-ref name="submit-decision-sub-flow" doc:name="Submit decision"/>
+  </flow>
+
+  <sub-flow name="submit-decision-sub-flow">
+    <flow-ref name="authenticate-sub-flow" doc:name="Authenticate"/>
+    <set-variable variableName="requiredRoles" value="#[['APPROVER', 'MANAGER', 'FINANCE_DIRECTOR']]" doc:name="Required roles"/>
+    <flow-ref name="authorize-sub-flow" doc:name="Authorize"/>
+    <set-variable variableName="invoiceId" value="#[attributes.uriParams.invoiceId]" doc:name="invoiceId"/>
+    <validation:matches-regex doc:name="invoiceId is a UUID" value="#[vars.invoiceId]"
+                              regex="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" message="invoiceId must be a UUID"/>
+    <validation:is-true doc:name="Comment length" message="comments/reason must be at most 1000 characters"
+                        expression="#[sizeOf(vars.comments default '') &lt;= 1000]"/>
+    <flow-ref name="idempotency-lookup-sub-flow" doc:name="Idempotency lookup"/>
+    <choice doc:name="Replay?">
+      <when expression="#[not vars.idempotentReplay]">
+        <http:request method="POST" config-ref="process-api-request-config" path="/invoices/{invoiceId}/decisions" doc:name="PROCESS - Submit decision">
+          <http:body><![CDATA[#[output application/json --- { decision: vars.decision, username: vars.user.username, roles: vars.user.roles, comments: vars.comments }]]]></http:body>
+          <http:headers><![CDATA[#[{ client_id: Mule::p('PROCESS_API_CLIENT_ID'), client_secret: Mule::p('PROCESS_API_CLIENT_SECRET'), 'X-Correlation-ID': correlationId }]]]></http:headers>
+          <http:uri-params><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></http:uri-params>
+          <http:response-validator>
+            <http:success-status-code-validator values="200..499"/>
+          </http:response-validator>
+        </http:request>
+        <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+        <set-variable variableName="httpStatus" value="#[200]" doc:name="200 OK"/>
+        <flow-ref name="idempotency-save-sub-flow" doc:name="Idempotency save"/>
+      </when>
+    </choice>
+  </sub-flow>
+
+  <!-- =====================================================================
+       GET /api/vendors/{vendorId}
+       GET /api/purchase-orders/{poNumber}
+       Roles: AP_CLERK, APPROVER, MANAGER, FINANCE_DIRECTOR, ADMIN
+       ===================================================================== -->
+  <flow name="get-vendor-flow">
+    <http:listener config-ref="experience-api-listener-config" path="/api/vendors/{vendorId}" allowedMethods="GET" doc:name="GET /api/vendors/{vendorId}">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('WWW-Authenticate': 'Basic realm="invoice-api"') if (vars.httpStatus == 401)}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="authenticate-sub-flow" doc:name="Authenticate"/>
+    <set-variable variableName="requiredRoles" value="#[['AP_CLERK', 'APPROVER', 'MANAGER', 'FINANCE_DIRECTOR', 'ADMIN']]" doc:name="Required roles"/>
+    <flow-ref name="authorize-sub-flow" doc:name="Authorize"/>
+    <validation:matches-regex doc:name="Vendor ID format" value="#[attributes.uriParams.vendorId]" regex="^V-[0-9]{4}$" message="vendorId must match V-9999"/>
+    <http:request method="GET" config-ref="sys-api-request-config" path="/vendors/{vendorId}" doc:name="SYS - Get vendor">
+      <http:headers><![CDATA[#[{ client_id: Mule::p('INTERNAL_CLIENT_ID'), client_secret: Mule::p('INTERNAL_CLIENT_SECRET'), 'X-Correlation-ID': correlationId }]]]></http:headers>
+      <http:uri-params><![CDATA[#[{ vendorId: attributes.uriParams.vendorId }]]]></http:uri-params>
+      <http:response-validator>
+        <http:success-status-code-validator values="200..499"/>
+      </http:response-validator>
+    </http:request>
+    <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+  </flow>
+
+  <flow name="get-purchase-order-flow">
+    <http:listener config-ref="experience-api-listener-config" path="/api/purchase-orders/{poNumber}" allowedMethods="GET" doc:name="GET /api/purchase-orders/{poNumber}">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId, ('WWW-Authenticate': 'Basic realm="invoice-api"') if (vars.httpStatus == 401)}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="authenticate-sub-flow" doc:name="Authenticate"/>
+    <set-variable variableName="requiredRoles" value="#[['AP_CLERK', 'APPROVER', 'MANAGER', 'FINANCE_DIRECTOR', 'ADMIN']]" doc:name="Required roles"/>
+    <flow-ref name="authorize-sub-flow" doc:name="Authorize"/>
+    <validation:matches-regex doc:name="PO number format" value="#[attributes.uriParams.poNumber]" regex="^[A-Za-z0-9\-]{3,30}$" message="Invalid purchase order number"/>
+    <http:request method="GET" config-ref="sys-api-request-config" path="/purchase-orders/{poNumber}" doc:name="SYS - Get purchase order">
+      <http:headers><![CDATA[#[{ client_id: Mule::p('INTERNAL_CLIENT_ID'), client_secret: Mule::p('INTERNAL_CLIENT_SECRET'), 'X-Correlation-ID': correlationId }]]]></http:headers>
+      <http:uri-params><![CDATA[#[{ poNumber: attributes.uriParams.poNumber }]]]></http:uri-params>
+      <http:response-validator>
+        <http:success-status-code-validator values="200..499"/>
+      </http:response-validator>
+    </http:request>
+    <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+  </flow>
+
+  <!-- GET /api/health (no authentication - for load balancers / monitoring) -->
+  <flow name="experience-health-flow">
+    <http:listener config-ref="experience-api-listener-config" path="/api/health" allowedMethods="GET" doc:name="GET /api/health">
+      <http:response statusCode="#[vars.httpStatus default 200]"/>
+    </http:listener>
+    <set-payload mimeType="application/json" doc:name="Health"
+                 value="#[output application/json --- { status: 'UP', service: 'invoice-experience-api', timestamp: now() >> 'UTC' }]"/>
+  </flow>
+
+</mule>

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DATABASE INTEGRATION TESTS (real MySQL, nothing mocked)
+  Prerequisites: database/01-schema.sql + 02-sample-data.sql loaded,
+  credentials as in src/test/resources/config/test.yaml (or env vars).
+  Run:  mvn test -Dmunit.tags=integration
+-->
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+
+  <munit:config name="sys-db-integration-test-suite.xml"/>
+
+  <!-- remove rows created by these tests (submitted_by = 'munit-it') -->
+  <munit:after-suite name="cleanup-integration-rows">
+    <db:delete config-ref="invoice-db-config" doc:name="Delete test invoices">
+      <db:sql><![CDATA[DELETE FROM invoices WHERE submitted_by = 'munit-it']]></db:sql>
+    </db:delete>
+  </munit:after-suite>
+
+  <munit:test name="it-vendor-lookup" tags="integration" description="Seeded vendor V-1001 is returned from MySQL">
+    <munit:execution>
+      <munit:set-event>
+        <munit:attributes value="#[{ headers: { client_id: 'test-client', client_secret: 'test-secret' }, uriParams: { vendorId: 'V-1001' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="sys-get-vendor-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[payload.vendorName]" is="#[MunitTools::equalTo('Acme Office Supplies')]"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="it-purchase-order-with-lines" tags="integration" description="PO-2026-0002 has two lines and the seeded totals">
+    <munit:execution>
+      <munit:set-event>
+        <munit:attributes value="#[{ headers: { client_id: 'test-client', client_secret: 'test-secret' }, uriParams: { poNumber: 'PO-2026-0002' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="sys-get-purchase-order-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[sizeOf(payload.lines)]" is="#[MunitTools::equalTo(2)]"/>
+      <munit-tools:assert-that expression="#[payload.totalAmount as Number]" is="#[MunitTools::closeTo(5400, 0.001)]"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="it-create-and-idempotent-replay" tags="integration"
+              description="Create invoice, then re-send the same document: same invoiceId, HTTP 200, idempotentReplay=true">
+    <munit:execution>
+      <munit:set-event>
+        <munit:payload mediaType="application/java" value="#[{
+          sourceChannel: 'API_JSON', submittedBy: 'munit-it',
+          document: { fileName: 'it.json', mimeType: 'application/json', sizeBytes: 2, sha256: (uuid() replace '-' with '') ++ (uuid() replace '-' with ''), contentBase64: 'e30=' } }]"/>
+        <munit:attributes value="#[{ headers: { client_id: 'test-client', client_secret: 'test-secret' }, uriParams: {}, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="sys-create-invoice-flow"/>
+      <set-variable variableName="createdId" value="#[payload.invoiceId]"/>
+      <set-payload value="#[vars.request]" mimeType="application/java"/>
+      <remove-variable variableName="httpStatus"/>
+      <flow-ref name="sys-create-invoice-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[payload.invoiceId]" is="#[MunitTools::equalTo(vars.createdId)]"/>
+      <munit-tools:assert-that expression="#[payload.idempotentReplay]" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(200)]"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="it-optimistic-lock-conflict" tags="integration"
+              description="PATCH status with a stale expectedVersion is rejected with 409 STALE_UPDATE">
+    <munit:behavior>
+      <db:insert config-ref="invoice-db-config" doc:name="Seed invoice">
+        <db:sql><![CDATA[INSERT INTO invoices (invoice_id, status, source_channel, submitted_by)
+VALUES ('aaaaaaaa-0000-4000-8000-00000000it01', 'RECEIVED', 'API_JSON', 'munit-it')
+ON DUPLICATE KEY UPDATE status = 'RECEIVED']]></db:sql>
+      </db:insert>
+    </munit:behavior>
+    <munit:execution>
+      <munit:set-event>
+        <munit:payload mediaType="application/java" value="#[{ status: 'PROCESSING', expectedStatus: 'RECEIVED', expectedVersion: 999 }]"/>
+        <munit:attributes value="#[{ headers: { client_id: 'test-client', client_secret: 'test-secret' }, uriParams: { invoiceId: 'aaaaaaaa-0000-4000-8000-00000000it01' }, queryParams: {} }]"/>
+      </munit:set-event>
+      <flow-ref name="sys-update-status-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(409)]"/>
+      <munit-tools:assert-that expression="#[payload.error.code]" is="#[MunitTools::equalTo('STALE_UPDATE')]"/>
+    </munit:validation>
+  </munit:test>
+
+</mule>

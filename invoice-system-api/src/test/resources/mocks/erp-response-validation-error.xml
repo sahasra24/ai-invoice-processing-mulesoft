@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ErrorResponse xmlns="urn:example:erp:ap:v1">
+  <Code>VALIDATION_ERROR</Code>
+  <Message>Missing required elements: VendorCode</Message>
+</ErrorResponse>

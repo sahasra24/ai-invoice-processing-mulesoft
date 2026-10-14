@@ -1,0 +1,33 @@
+{
+  "poNumber": "PO-2026-0001",
+  "vendorId": "V-1001",
+  "status": "OPEN",
+  "currency": "USD",
+  "subtotalAmount": 800,
+  "taxAmount": 64,
+  "totalAmount": 864,
+  "invoicedAmount": 0,
+  "remainingAmount": 864,
+  "lines": [
+    {
+      "lineNumber": 1,
+      "itemCode": "PAP-A4-500",
+      "description": "A4 Copy Paper 80gsm (box of 5 reams)",
+      "quantity": 100,
+      "unitPrice": 5,
+      "lineAmount": 500,
+      "quantityInvoiced": 0,
+      "remainingQuantity": 100
+    },
+    {
+      "lineNumber": 2,
+      "itemCode": "TON-HP-26X",
+      "description": "HP 26X Black Toner Cartridge",
+      "quantity": 10,
+      "unitPrice": 30,
+      "lineAmount": 300,
+      "quantityInvoiced": 0,
+      "remainingQuantity": 10
+    }
+  ]
+}

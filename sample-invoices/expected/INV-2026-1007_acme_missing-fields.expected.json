@@ -1,0 +1,144 @@
+{
+  "sampleFile": "pdf/INV-2026-1007_acme_missing-fields.pdf",
+  "rawExtraction": {
+    "provider": "MOCK_DOCUMENT_AI",
+    "model": "mock-invoice-extractor-v1",
+    "warnings": [],
+    "extraction": {
+      "invoice_number": null,
+      "invoice_date": "2026-10-02",
+      "due_date": "2026-11-01",
+      "vendor_name": "Acme Office Supplies",
+      "vendor_id": "V-1001",
+      "purchase_order_number": "PO-2026-0008",
+      "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+      "currency": "USD",
+      "payment_terms": "Net 30",
+      "subtotal": "60.00",
+      "total_amount": null,
+      "tax": "4.80",
+      "tax_rate": 0.08,
+      "line_items": [
+        {
+          "line_number": 1,
+          "item_code": "NTB-A5-DOT",
+          "description": "A5 Dotted Notebook",
+          "quantity": "20",
+          "unit_price": "3.00",
+          "amount": "60.00"
+        }
+      ],
+      "field_confidence": {
+        "invoice_number": 0.0,
+        "invoice_date": 0.98,
+        "due_date": 0.97,
+        "vendor_name": 0.97,
+        "vendor_id": 0.97,
+        "purchase_order_number": 0.98,
+        "billing_address": 0.98,
+        "currency": 0.95,
+        "payment_terms": 0.99,
+        "subtotal": 0.98,
+        "total_amount": 0.0,
+        "tax": 0.99,
+        "line_items": 0.95
+      },
+      "overall_confidence": 0.58
+    }
+  },
+  "canonicalInvoice": {
+    "invoiceNumber": null,
+    "normalizedInvoiceNumber": null,
+    "invoiceDate": "2026-10-02",
+    "dueDate": "2026-11-01",
+    "dueDateDerived": false,
+    "vendor": {
+      "id": "V-1001",
+      "name": "Acme Office Supplies"
+    },
+    "poNumber": "PO-2026-0008",
+    "billingAddress": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+    "currency": "USD",
+    "paymentTerms": "Net 30",
+    "lineItems": [
+      {
+        "lineNumber": 1,
+        "itemCode": "NTB-A5-DOT",
+        "description": "A5 Dotted Notebook",
+        "quantity": 20,
+        "unitPrice": 3,
+        "amount": 60,
+        "amountDerived": false
+      }
+    ],
+    "subtotal": 60,
+    "tax": 4.8,
+    "taxRate": 0.08,
+    "total": null,
+    "extraction": {
+      "provider": "MOCK_DOCUMENT_AI",
+      "model": "mock-invoice-extractor-v1",
+      "overallConfidence": 0.58,
+      "fieldConfidence": {
+        "invoiceNumber": 0.0,
+        "invoiceDate": 0.98,
+        "vendorName": 0.97,
+        "vendorId": 0.97,
+        "poNumber": 0.98,
+        "billingAddress": 0.98,
+        "currency": 0.95,
+        "lineItems": 0.95,
+        "subtotal": 0.98,
+        "tax": 0.99,
+        "total": 0.0,
+        "paymentTerms": 0.99,
+        "dueDate": 0.97
+      },
+      "warnings": []
+    }
+  },
+  "routingDecision": {
+    "status": "VALIDATION_FAILED",
+    "autoApproved": false,
+    "approvalChain": [],
+    "approvalsRequired": 0,
+    "nextApprovalLevel": null,
+    "duplicateOf": null,
+    "decisionReason": "2 blocking validation error(s): MISSING_REQUIRED_FIELD",
+    "validationErrors": [
+      {
+        "code": "MISSING_REQUIRED_FIELD",
+        "severity": "BLOCKING",
+        "message": "Required field 'invoiceNumber' is missing or unreadable",
+        "details": {
+          "field": "invoiceNumber"
+        }
+      },
+      {
+        "code": "MISSING_REQUIRED_FIELD",
+        "severity": "BLOCKING",
+        "message": "Required field 'total' is missing or unreadable",
+        "details": {
+          "field": "total"
+        }
+      }
+    ],
+    "exceptions": [
+      {
+        "code": "LOW_CONFIDENCE",
+        "severity": "REVIEW",
+        "message": "Overall extraction confidence 0.58 is below the 0.85 threshold"
+      }
+    ],
+    "checks": {
+      "schemaValid": true,
+      "fieldsValid": false,
+      "vendorVerified": true,
+      "duplicateChecked": false,
+      "poMatched": true,
+      "totalsValid": true,
+      "taxValid": true,
+      "extractionConfidence": 0.58
+    }
+  }
+}

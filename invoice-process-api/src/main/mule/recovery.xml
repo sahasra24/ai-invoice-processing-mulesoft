@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd">
+
+  <!-- =====================================================================
+       Recoverable failure queue processor (Scheduler + Batch Job)
+
+       Every ${recovery.pollFrequencyMs} ms:
+         1. claim due items from the System API (FOR UPDATE SKIP LOCKED -> safe
+            when several workers / replicas run this scheduler)
+         2. Batch Job processes each item in its own record:
+              AI_EXTRACTION -> re-run the whole pipeline from the stored document
+              ERP_POSTING   -> re-post to the ERP
+         3. success -> RESOLVED ; failure -> exponential backoff
+            (60s, 120s, 240s, ... max 1h) ; maxAttempts reached -> DEAD
+            (dead letter) and invoice status FAILED for manual intervention
+       ===================================================================== -->
+  <flow name="recovery-scheduler-flow" initialState="${recovery.flowState}">
+    <scheduler doc:name="Poll recovery queue" disallowConcurrentExecution="true">
+      <scheduling-strategy>
+        <fixed-frequency frequency="${recovery.pollFrequencyMs}" startDelay="${recovery.startDelayMs}" timeUnit="MILLISECONDS"/>
+      </scheduling-strategy>
+    </scheduler>
+    <flow-ref name="init-context-sub-flow" doc:name="Init context"/>
+    <http:request method="POST" config-ref="sys-api-request-config" path="/recovery-queue/claim" doc:name="SYS - Claim due items">
+      <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+      <http:query-params><![CDATA[#[{ limit: vars.config.recovery.batchSize as String }]]]></http:query-params>
+    </http:request>
+    <choice doc:name="Anything due?">
+      <when expression="#[not isEmpty(payload)]">
+        <logger level="INFO" doc:name="Log claimed" category="invoice.process.recovery"
+                message="#[output application/json indent=false --- { event: 'recovery.claimed', items: sizeOf(payload) }]"/>
+        <!-- the Batch Job needs an Iterable/Collection, not a JSON stream -->
+        <set-payload value="#[output application/java --- payload]" doc:name="To Java list"/>
+        <batch:job jobName="invoice-recovery-batch-job" maxFailedRecords="-1" blockSize="5" maxConcurrency="2" doc:name="Recover invoices">
+          <batch:process-records>
+            <batch:step name="recover-item-step">
+              <flow-ref name="recover-queue-item-sub-flow" doc:name="Recover item"/>
+            </batch:step>
+            <batch:step name="report-unexpected-failures-step" acceptPolicy="ONLY_FAILURES">
+              <logger level="ERROR" doc:name="Log unrecoverable record" category="invoice.process.recovery"
+                      message="#[output application/json indent=false --- { event: 'recovery.record.failed', queueId: payload.queueId, invoiceId: payload.invoiceId }]"/>
+            </batch:step>
+          </batch:process-records>
+          <batch:on-complete>
+            <logger level="INFO" doc:name="Log batch summary" category="invoice.process.recovery"
+                    message="#[output application/json indent=false --- { event: 'recovery.batch.completed', total: payload.totalRecords, successful: payload.successfulRecords, failed: payload.failedRecords, elapsedMs: payload.elapsedTimeInMillis }]"/>
+          </batch:on-complete>
+        </batch:job>
+      </when>
+      <otherwise>
+        <logger level="DEBUG" doc:name="Nothing due" category="invoice.process.recovery" message="recovery queue empty"/>
+      </otherwise>
+    </choice>
+    <error-handler>
+      <on-error-continue type="ANY" doc:name="Log poll failure" logException="false">
+        <logger level="WARN" doc:name="Log poll failure" category="invoice.process.recovery"
+                message="#[output application/json indent=false --- { event: 'recovery.poll.failed', errorType: (error.errorType.namespace default '') ++ ':' ++ (error.errorType.identifier default '') }]"/>
+      </on-error-continue>
+    </error-handler>
+  </flow>
+
+  <!-- One queue item (payload = { queueId, invoiceId, failureType, attemptCount, maxAttempts }) -->
+  <sub-flow name="recover-queue-item-sub-flow">
+    <flow-ref name="init-context-sub-flow" doc:name="Init context"/>
+    <set-variable variableName="queueItem" value="#[payload]" doc:name="queueItem"/>
+    <set-variable variableName="invoiceId" value="#[payload.invoiceId]" doc:name="invoiceId"/>
+    <set-variable variableName="recoveryFailureType" value="#[payload.failureType]" doc:name="recoveryFailureType"/>
+    <try doc:name="Retry failed step">
+      <choice doc:name="Failure type?">
+        <when expression="#[vars.recoveryFailureType == 'AI_EXTRACTION']">
+          <flow-ref name="sys-get-invoice-sub-flow" doc:name="Load invoice"/>
+          <set-variable variableName="submittedBy" value="#[vars.currentInvoice.submittedBy]" doc:name="submittedBy"/>
+          <flow-ref name="sys-get-document-sub-flow" doc:name="Load document"/>
+          <flow-ref name="process-invoice-orchestration-sub-flow" doc:name="Re-run pipeline"/>
+        </when>
+        <when expression="#[vars.recoveryFailureType == 'ERP_POSTING']">
+          <flow-ref name="erp-posting-sub-flow" doc:name="Re-post to ERP"/>
+        </when>
+        <otherwise>
+          <raise-error type="APP:BAD_REQUEST" description="Unsupported failure type" doc:name="Unsupported"/>
+        </otherwise>
+      </choice>
+      <http:request method="PATCH" config-ref="sys-api-request-config" path="/recovery-queue/{queueId}" doc:name="SYS - Mark RESOLVED">
+        <http:body><![CDATA[#[output application/json --- { status: 'RESOLVED', attemptCount: (vars.queueItem.attemptCount default 0) + 1 }]]]></http:body>
+        <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+        <http:uri-params><![CDATA[#[{ queueId: vars.queueItem.queueId as String }]]]></http:uri-params>
+      </http:request>
+      <logger level="INFO" doc:name="Log recovered" category="invoice.process.recovery"
+              message="#[output application/json indent=false --- { event: 'recovery.resolved', queueId: vars.queueItem.queueId, invoiceId: vars.invoiceId, failureType: vars.recoveryFailureType, finalStatus: vars.finalStatus default null }]"/>
+      <error-handler>
+        <on-error-continue type="ANY" doc:name="Schedule next attempt" logException="false">
+          <set-variable variableName="recoveryError" doc:name="recoveryError"
+                        value="#[{ code: vars.downstreamErrorCode default (error.errorType.identifier default 'UNKNOWN'), message: vars.errorOverride.message default error.description }]"/>
+          <remove-variable variableName="errorOverride" doc:name="Clear handled error"/>
+          <set-payload value="#[vars.queueItem]" doc:name="Queue item"/>
+          <ee:transform doc:name="Exponential backoff">
+            <ee:variables>
+              <ee:set-variable variableName="backoff" resource="dwl/recovery-backoff.dwl"/>
+            </ee:variables>
+          </ee:transform>
+          <http:request method="PATCH" config-ref="sys-api-request-config" path="/recovery-queue/{queueId}" doc:name="SYS - Record failed attempt">
+            <http:body><![CDATA[#[output application/json --- vars.backoff]]]></http:body>
+            <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+            <http:uri-params><![CDATA[#[{ queueId: vars.queueItem.queueId as String }]]]></http:uri-params>
+          </http:request>
+          <choice doc:name="Dead letter?">
+            <when expression="#[vars.backoff.status == 'DEAD']">
+              <set-variable variableName="statusChange" doc:name="FAILED"
+                            value="#[{ status: 'FAILED', step: 'RECOVERY', outcome: 'FAILED', actor: 'system', reason: 'Moved to dead-letter after ' ++ (vars.backoff.attemptCount as String) ++ ' attempts (' ++ vars.recoveryFailureType ++ '): ' ++ (vars.recoveryError.message default '') }]"/>
+              <flow-ref name="sys-patch-status-sub-flow" doc:name="Status: FAILED"/>
+              <logger level="ERROR" doc:name="Log dead letter" category="invoice.process.recovery"
+                      message="#[output application/json indent=false --- { event: 'recovery.dead_letter', queueId: vars.queueItem.queueId, invoiceId: vars.invoiceId, attempts: vars.backoff.attemptCount }]"/>
+            </when>
+            <when expression="#[vars.recoveryFailureType == 'AI_EXTRACTION']">
+              <!-- the re-run set PROCESSING; put the invoice back into its failed state -->
+              <set-variable variableName="statusChange" doc:name="EXTRACTION_FAILED"
+                            value="#[{ status: 'EXTRACTION_FAILED', step: 'RECOVERY', outcome: 'FAILED', actor: 'system', reason: 'Retry ' ++ (vars.backoff.attemptCount as String) ++ ' failed; next attempt in ' ++ (vars.backoff.delaySeconds as String) ++ 's' }]"/>
+              <flow-ref name="sys-patch-status-sub-flow" doc:name="Status: EXTRACTION_FAILED"/>
+            </when>
+            <otherwise>
+              <logger level="WARN" doc:name="Log retry scheduled" category="invoice.process.recovery"
+                      message="#[output application/json indent=false --- { event: 'recovery.rescheduled', queueId: vars.queueItem.queueId, invoiceId: vars.invoiceId, attempt: vars.backoff.attemptCount, delaySeconds: vars.backoff.delaySeconds }]"/>
+            </otherwise>
+          </choice>
+        </on-error-continue>
+      </error-handler>
+    </try>
+  </sub-flow>
+
+  <!-- =====================================================================
+       GET /process/v1/health
+       ===================================================================== -->
+  <flow name="process-health-flow">
+    <http:listener config-ref="process-api-listener-config" path="/process/v1/health" allowedMethods="GET" doc:name="GET /health">
+      <http:response statusCode="#[vars.httpStatus default 200]"/>
+      <http:error-response statusCode="#[vars.httpStatus default 503]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+      </http:error-response>
+    </http:listener>
+    <set-payload mimeType="application/json" doc:name="Health response"
+                 value="#[output application/json --- { status: 'UP', service: 'invoice-process-api', aiProvider: lower(Mule::p('AI_PROVIDER')), timestamp: now() >> 'UTC' }]"/>
+  </flow>
+
+</mule>

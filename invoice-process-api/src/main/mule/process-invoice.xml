@@ -1,0 +1,633 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:json="http://www.mulesoft.org/schema/mule/json"
+      xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+        http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+
+  <!-- =====================================================================
+       POST /process/v1/invoices
+       Body: { sourceChannel, submittedBy, autoProcess?, document: { fileName, mimeType,
+               sizeBytes, sha256, contentBase64 } }
+       Registers the invoice in the System API and (by default) runs the full
+       processing pipeline synchronously. Returns a ProcessingResult.
+       ===================================================================== -->
+  <flow name="process-create-invoice-flow">
+    <http:listener config-ref="process-api-listener-config" path="/process/v1/invoices" allowedMethods="POST" doc:name="POST /invoices">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="process-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <flow-ref name="init-context-sub-flow" doc:name="Init context"/>
+    <set-variable variableName="request" value="#[payload]" doc:name="Keep request"/>
+    <validation:is-true doc:name="Document is complete" message="document.fileName, mimeType, sizeBytes, sha256 and contentBase64 are required"
+                        expression="#[vars.request.document != null and (vars.request.document.fileName default '') != '' and (vars.request.document.contentBase64 default '') != '' and ((vars.request.document.sha256 default '') matches /^[a-f0-9]{64}$/)]"/>
+    <validation:is-true doc:name="Supported mime type" message="mimeType must be application/pdf, image/png, image/jpeg or application/json"
+                        expression="#[['application/pdf','image/png','image/jpeg','application/json'] contains vars.request.document.mimeType]"/>
+    <set-variable variableName="document" value="#[vars.request.document]" doc:name="document"/>
+    <set-variable variableName="submittedBy" value="#[vars.request.submittedBy]" doc:name="submittedBy"/>
+    <flow-ref name="register-invoice-sub-flow" doc:name="Register + process"/>
+  </flow>
+
+  <!-- Shared by the HTTP and file-drop entry points.
+       In: vars.document, vars.submittedBy, vars.request.sourceChannel, vars.request.autoProcess -->
+  <sub-flow name="register-invoice-sub-flow">
+    <http:request method="POST" config-ref="sys-api-request-config" path="/invoices" doc:name="SYS - Create invoice">
+      <http:body><![CDATA[#[output application/json --- {
+  sourceChannel: vars.request.sourceChannel default 'API_UPLOAD',
+  submittedBy: vars.submittedBy,
+  document: vars.document
+}]]]></http:body>
+      <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+      <http:response-validator>
+        <http:success-status-code-validator values="200..499"/>
+      </http:response-validator>
+    </http:request>
+    <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+    <set-variable variableName="invoiceId" value="#[payload.invoiceId]" doc:name="invoiceId"/>
+    <logger level="INFO" doc:name="Log registered" category="invoice.process"
+            message="#[output application/json indent=false --- { event: 'invoice.registered', invoiceId: vars.invoiceId, replay: payload.idempotentReplay default false }]"/>
+    <choice doc:name="Replay / auto-process?">
+      <when expression="#[payload.idempotentReplay default false]">
+        <!-- same document uploaded again: return the current state, never process twice -->
+        <flow-ref name="sys-get-invoice-sub-flow" doc:name="Load current state"/>
+        <ee:transform doc:name="Replay result">
+          <ee:message>
+            <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var inv = vars.currentInvoice
+var chain = (inv.approvalChain default "") splitBy "," filter (!isEmpty($))
+---
+{
+  invoiceId: inv.invoiceId,
+  invoiceNumber: inv.invoiceNumber,
+  status: inv.status,
+  idempotentReplay: true,
+  vendorId: inv.vendorId default inv.extractedVendorId,
+  poNumber: inv.poNumber,
+  currency: inv.currency,
+  totalAmount: inv.totalAmount,
+  extractionConfidence: inv.extractionConfidence,
+  decisionReason: "Document already received on " ++ (inv.createdAt default "") ++ "; returning current status",
+  approval: { required: !isEmpty(chain), chain: chain, approvalsRequired: inv.approvalsRequired, approvalsReceived: inv.approvalsReceived, nextApprovalLevel: chain[inv.approvalsReceived default 0] },
+  duplicateOf: inv.duplicateOf,
+  validationErrors: inv.validationErrors default [],
+  exceptions: inv.exceptions default [],
+  erp: if (inv.erpDocumentNumber != null) { documentNumber: inv.erpDocumentNumber, postedAt: inv.erpPostedAt } else null,
+  correlationId: correlationId,
+  processedAt: now() >> "UTC"
+}]]></ee:set-payload>
+          </ee:message>
+        </ee:transform>
+      </when>
+      <when expression="#[(vars.request.autoProcess default true) == false]">
+        <set-payload mimeType="application/json" doc:name="Received result"
+                     value="#[output application/json --- { invoiceId: vars.invoiceId, status: 'RECEIVED', idempotentReplay: false, decisionReason: 'Stored; processing deferred (autoProcess=false)', correlationId: correlationId }]"/>
+      </when>
+      <otherwise>
+        <flow-ref name="process-invoice-orchestration-sub-flow" doc:name="Process invoice"/>
+      </otherwise>
+    </choice>
+  </sub-flow>
+
+  <!-- =====================================================================
+       POST /process/v1/invoices/{invoiceId}/process
+       (Re)processes a stored invoice: RECEIVED (deferred) or EXTRACTION_FAILED.
+       ===================================================================== -->
+  <flow name="process-existing-invoice-flow">
+    <http:listener config-ref="process-api-listener-config" path="/process/v1/invoices/{invoiceId}/process" allowedMethods="POST" doc:name="POST /invoices/{invoiceId}/process">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="process-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <flow-ref name="init-context-sub-flow" doc:name="Init context"/>
+    <set-variable variableName="invoiceId" value="#[attributes.uriParams.invoiceId]" doc:name="invoiceId"/>
+    <flow-ref name="sys-get-invoice-sub-flow" doc:name="Load invoice"/>
+    <choice doc:name="Processable state?">
+      <when expression="#[not (['RECEIVED','EXTRACTION_FAILED'] contains vars.currentInvoice.status)]">
+        <set-variable variableName="errorOverride" doc:name="409 override"
+                      value="#[{ httpStatus: 409, code: 'INVALID_INVOICE_STATE', message: 'Only RECEIVED or EXTRACTION_FAILED invoices can be (re)processed; invoice is ' ++ vars.currentInvoice.status }]"/>
+        <raise-error type="APP:INVALID_STATE" description="Invoice not processable" doc:name="Raise APP:INVALID_STATE"/>
+      </when>
+    </choice>
+    <set-variable variableName="submittedBy" value="#[vars.currentInvoice.submittedBy]" doc:name="submittedBy"/>
+    <flow-ref name="sys-get-document-sub-flow" doc:name="Load document"/>
+    <flow-ref name="process-invoice-orchestration-sub-flow" doc:name="Process invoice"/>
+  </flow>
+
+  <!-- =====================================================================
+       ORCHESTRATION - business workflow steps 3..13
+       In : vars.invoiceId, vars.document, vars.submittedBy, vars.config, vars.sysHeaders
+            vars.recoveryFailureType (only when called by the recovery batch job)
+       Out: payload = ProcessingResult (dwl/processing-result.dwl)
+       ===================================================================== -->
+  <sub-flow name="process-invoice-orchestration-sub-flow">
+    <set-variable variableName="statusChange" doc:name="PROCESSING"
+                  value="#[{ status: 'PROCESSING', step: 'PROCESSING_STARTED', actor: 'system', reason: 'Processing started (' ++ (vars.config.aiProvider default 'mock') ++ ' extraction)' }]"/>
+    <flow-ref name="sys-patch-status-sub-flow" doc:name="Status: PROCESSING"/>
+    <set-variable variableName="aiFailed" value="#[false]" doc:name="aiFailed = false"/>
+
+    <!-- Step 3: AI extraction (or structured JSON) -->
+    <try doc:name="Extract invoice data">
+      <choice doc:name="Structured JSON?">
+        <when expression="#[vars.document.mimeType == 'application/json']">
+          <ee:transform doc:name="JSON invoice envelope">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+import fromBase64 from dw::core::Binaries
+---
+{
+  provider: "JSON_UPLOAD",
+  model: null,
+  warnings: [],
+  extraction: read(fromBase64(vars.document.contentBase64) as String { encoding: "UTF-8" }, "application/json")
+}]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
+        </when>
+        <otherwise>
+          <flow-ref name="ai-extraction-sub-flow" doc:name="AI extraction"/>
+        </otherwise>
+      </choice>
+      <error-handler>
+        <on-error-propagate type="APP:AI_EXTRACTION_FAILED" when="#[vars.recoveryFailureType == 'AI_EXTRACTION']" doc:name="Recovery mode: propagate">
+          <logger level="WARN" doc:name="Log retry failed" category="invoice.process.recovery"
+                  message="#[output application/json indent=false --- { event: 'recovery.ai.failed', invoiceId: vars.invoiceId }]"/>
+        </on-error-propagate>
+        <on-error-continue type="APP:AI_EXTRACTION_FAILED" doc:name="AI failed: queue for recovery" logException="false">
+          <set-variable variableName="aiFailed" value="#[true]" doc:name="aiFailed = true"/>
+          <set-variable variableName="failure" doc:name="Failure info"
+                        value="#[{ failureType: 'AI_EXTRACTION', errorCode: 'AI_EXTRACTION_FAILED', message: error.description, queued: true }]"/>
+          <flow-ref name="enqueue-recovery-sub-flow" doc:name="Enqueue for retry"/>
+          <set-variable variableName="statusChange" doc:name="EXTRACTION_FAILED"
+                        value="#[{ status: 'EXTRACTION_FAILED', step: 'AI_EXTRACTION', outcome: 'FAILED', actor: 'system', reason: 'AI extraction failed; queued for automatic retry: ' ++ (error.description default '') }]"/>
+          <flow-ref name="sys-patch-status-sub-flow" doc:name="Status: EXTRACTION_FAILED"/>
+          <set-variable variableName="finalStatus" value="EXTRACTION_FAILED" doc:name="finalStatus"/>
+        </on-error-continue>
+      </error-handler>
+    </try>
+
+    <choice doc:name="Extraction succeeded?">
+      <when expression="#[not vars.aiFailed]">
+        <flow-ref name="validate-and-route-sub-flow" doc:name="Validate, match and route"/>
+      </when>
+    </choice>
+
+    <!-- Step 13: final result -->
+    <ee:transform doc:name="Build processing result">
+      <ee:message>
+        <ee:set-payload resource="dwl/processing-result.dwl"/>
+      </ee:message>
+    </ee:transform>
+    <logger level="INFO" doc:name="Log processed" category="invoice.process"
+            message="#[output application/json indent=false --- { event: 'invoice.processed', invoiceId: vars.invoiceId, status: payload.status, provider: payload.extractionProvider, confidence: payload.extractionConfidence }]"/>
+  </sub-flow>
+
+  <!-- Steps 4..12 -->
+  <sub-flow name="validate-and-route-sub-flow">
+    <!-- Step 4: normalize to canonical JSON -->
+    <ee:transform doc:name="Normalize AI response">
+      <ee:message>
+        <ee:set-payload resource="dwl/normalize-ai-response.dwl"/>
+      </ee:message>
+    </ee:transform>
+    <set-variable variableName="invoice" value="#[payload]" doc:name="Canonical invoice"/>
+
+    <!-- Step 5a: structural JSON schema validation -->
+    <try doc:name="Schema validation">
+      <json:validate-schema schema="schemas/canonical-invoice-schema.json" doc:name="Validate canonical schema"/>
+      <set-variable variableName="schemaValidation" value="#[{ valid: true }]" doc:name="Schema valid"/>
+      <error-handler>
+        <on-error-continue type="JSON:SCHEMA_NOT_HONOURED" doc:name="Schema invalid" logException="false">
+          <set-variable variableName="schemaValidation" value="#[{ valid: false, message: error.description }]" doc:name="Schema invalid"/>
+        </on-error-continue>
+      </error-handler>
+    </try>
+    <set-payload value="#[vars.invoice]" doc:name="Restore invoice"/>
+
+    <!-- Step 5b: business field validation -->
+    <ee:transform doc:name="Validate invoice fields">
+      <ee:variables>
+        <ee:set-variable variableName="fieldValidation" resource="dwl/validate-invoice-fields.dwl"/>
+      </ee:variables>
+    </ee:transform>
+
+    <http:request method="PUT" config-ref="sys-api-request-config" path="/invoices/{invoiceId}/extraction" doc:name="SYS - Save extraction">
+      <http:body><![CDATA[#[output application/json --- vars.invoice]]]></http:body>
+      <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+      <http:uri-params><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></http:uri-params>
+      <http:response-validator>
+        <http:success-status-code-validator values="200..499"/>
+      </http:response-validator>
+    </http:request>
+    <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+    <flow-ref name="audit-sub-flow" doc:name="Audit extraction"
+              target="ignored" targetValue="#[null]"/>
+
+    <!-- Step 7: vendor verification -->
+    <choice doc:name="Vendor identifier available?">
+      <when expression="#[vars.invoice.vendor.id != null]">
+        <http:request method="GET" config-ref="sys-api-request-config" path="/vendors/{vendorId}" doc:name="SYS - Get vendor">
+          <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+          <http:uri-params><![CDATA[#[{ vendorId: vars.invoice.vendor.id }]]]></http:uri-params>
+          <http:response-validator>
+            <http:success-status-code-validator values="200..299,400,404"/>
+          </http:response-validator>
+        </http:request>
+        <set-variable variableName="vendorLookup" value="#[{ lookupType: 'ID', status: attributes.statusCode, body: payload }]" doc:name="vendorLookup (ID)"/>
+      </when>
+      <when expression="#[vars.invoice.vendor.name != null]">
+        <http:request method="GET" config-ref="sys-api-request-config" path="/vendors" doc:name="SYS - Search vendor by name">
+          <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+          <http:query-params><![CDATA[#[{ name: vars.invoice.vendor.name }]]]></http:query-params>
+          <http:response-validator>
+            <http:success-status-code-validator values="200..299,400"/>
+          </http:response-validator>
+        </http:request>
+        <set-variable variableName="vendorLookup" value="#[{ lookupType: 'NAME', status: attributes.statusCode, body: payload }]" doc:name="vendorLookup (NAME)"/>
+      </when>
+      <otherwise>
+        <set-variable variableName="vendorLookup" value="#[{ lookupType: 'NONE' }]" doc:name="vendorLookup (NONE)"/>
+      </otherwise>
+    </choice>
+    <set-payload value="#[vars.invoice]" doc:name="Restore invoice"/>
+    <ee:transform doc:name="Verify vendor">
+      <ee:variables>
+        <ee:set-variable variableName="vendorCheck" resource="dwl/vendor-verification.dwl"/>
+      </ee:variables>
+    </ee:transform>
+
+    <!-- Step 6: duplicate detection -->
+    <set-variable variableName="resolvedVendorId" value="#[vars.vendorCheck.vendor.vendorId default vars.invoice.vendor.id]" doc:name="Resolved vendor id"/>
+    <choice doc:name="Can check duplicates?">
+      <when expression="#[vars.invoice.normalizedInvoiceNumber != null and vars.resolvedVendorId != null]">
+        <http:request method="GET" config-ref="sys-api-request-config" path="/invoice-duplicates" doc:name="SYS - Duplicate check">
+          <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+          <http:query-params><![CDATA[#[{
+  vendorId: vars.resolvedVendorId,
+  normalizedInvoiceNumber: vars.invoice.normalizedInvoiceNumber,
+  (totalAmount: vars.invoice.total as String) if (vars.invoice.total != null),
+  (invoiceDate: vars.invoice.invoiceDate) if (vars.invoice.invoiceDate != null),
+  excludeInvoiceId: vars.invoiceId
+}]]]></http:query-params>
+          <http:response-validator>
+            <http:success-status-code-validator values="200..499"/>
+          </http:response-validator>
+        </http:request>
+        <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+      </when>
+      <otherwise>
+        <set-payload value="#[null]" doc:name="No duplicate check"/>
+      </otherwise>
+    </choice>
+    <ee:transform doc:name="Check duplicates">
+      <ee:variables>
+        <ee:set-variable variableName="duplicateCheck" resource="dwl/duplicate-detection.dwl"/>
+      </ee:variables>
+    </ee:transform>
+
+    <!-- Step 8: purchase order lookup + matching -->
+    <choice doc:name="PO number present?">
+      <when expression="#[vars.invoice.poNumber != null]">
+        <http:request method="GET" config-ref="sys-api-request-config" path="/purchase-orders/{poNumber}" doc:name="SYS - Get purchase order">
+          <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+          <http:uri-params><![CDATA[#[{ poNumber: vars.invoice.poNumber }]]]></http:uri-params>
+          <http:response-validator>
+            <http:success-status-code-validator values="200..299,400,404"/>
+          </http:response-validator>
+        </http:request>
+        <set-variable variableName="poLookup" value="#[{ status: attributes.statusCode, body: payload }]" doc:name="poLookup"/>
+      </when>
+      <otherwise>
+        <set-variable variableName="poLookup" value="#[null]" doc:name="poLookup = null"/>
+      </otherwise>
+    </choice>
+    <set-payload value="#[vars.invoice]" doc:name="Restore invoice"/>
+    <ee:transform doc:name="Match PO, verify totals and tax">
+      <ee:variables>
+        <ee:set-variable variableName="poMatch" resource="dwl/po-matching.dwl"/>
+        <ee:set-variable variableName="totals" resource="dwl/calculate-invoice-totals.dwl"/>
+      </ee:variables>
+    </ee:transform>
+    <!-- Step 9: tax needs the totals result -->
+    <ee:transform doc:name="Validate tax">
+      <ee:variables>
+        <ee:set-variable variableName="taxCheck" resource="dwl/tax-validation.dwl"/>
+      </ee:variables>
+    </ee:transform>
+
+    <!-- Step 10: approval routing decision -->
+    <ee:transform doc:name="Route for approval">
+      <ee:variables>
+        <ee:set-variable variableName="decision" resource="dwl/approval-routing.dwl"/>
+      </ee:variables>
+    </ee:transform>
+
+    <!-- Step 12: persist decision (DB unique dedupe_key may still detect a concurrent duplicate) -->
+    <set-variable variableName="statusChange" doc:name="Decision status change" value="#[%dw 2.0
+output application/java
+---
+{
+  status: vars.decision.status,
+  expectedStatus: 'PROCESSING',
+  step: 'ROUTING',
+  outcome: if (['VALIDATION_FAILED','DUPLICATE'] contains vars.decision.status) 'WARNING' else 'SUCCESS',
+  actor: 'system',
+  reason: vars.decision.decisionReason,
+  details: vars.decision.checks,
+  fields: {
+    vendorId: if (vars.vendorCheck.verified default false) vars.vendorCheck.vendor.vendorId else null,
+    approvalChain: vars.decision.approvalChain,
+    approvalsRequired: vars.decision.approvalsRequired,
+    approvalsReceived: 0,
+    validationErrors: vars.decision.validationErrors,
+    exceptions: vars.decision.exceptions,
+    duplicateOf: vars.decision.duplicateOf,
+    lineMatches: vars.poMatch.lineMatches default []
+  }
+}]"/>
+    <try doc:name="Persist decision">
+      <flow-ref name="sys-patch-status-sub-flow" doc:name="Status: decision"/>
+      <error-handler>
+        <on-error-continue type="APP:DOWNSTREAM_REJECTED" when="#[(vars.downstreamErrorCode default '') == 'DUPLICATE_RECORD']"
+                           doc:name="Concurrent duplicate" logException="false">
+          <remove-variable variableName="errorOverride" doc:name="Clear handled error"/>
+          <set-variable variableName="decision" doc:name="Decision = DUPLICATE"
+                        value="#[vars.decision ++ { status: 'DUPLICATE', approvalChain: [], approvalsRequired: 0, decisionReason: 'Duplicate detected by database unique constraint (concurrent submission)' }]"/>
+          <set-variable variableName="statusChange" doc:name="DUPLICATE"
+                        value="#[{ status: 'DUPLICATE', expectedStatus: 'PROCESSING', step: 'ROUTING', outcome: 'WARNING', actor: 'system', reason: vars.decision.decisionReason }]"/>
+          <flow-ref name="sys-patch-status-sub-flow" doc:name="Status: DUPLICATE"/>
+        </on-error-continue>
+      </error-handler>
+    </try>
+    <set-variable variableName="finalStatus" value="#[vars.decision.status]" doc:name="finalStatus"/>
+
+    <!-- Step 11: auto-approved invoices go straight to the ERP -->
+    <choice doc:name="Auto-approved?">
+      <when expression="#[vars.decision.status == 'APPROVED']">
+        <flow-ref name="erp-posting-sub-flow" doc:name="Post to ERP"/>
+      </when>
+    </choice>
+  </sub-flow>
+
+  <!-- =====================================================================
+       AI extraction: provider selected by AI_PROVIDER (mock | claude)
+       Out: { provider, model, warnings, extraction } ; raises APP:AI_EXTRACTION_FAILED
+       ===================================================================== -->
+  <sub-flow name="ai-extraction-sub-flow">
+    <choice doc:name="Provider?">
+      <when expression="#[vars.config.aiProvider == 'claude']">
+        <flow-ref name="ai-extraction-claude-sub-flow" doc:name="Claude"/>
+      </when>
+      <otherwise>
+        <flow-ref name="ai-extraction-mock-sub-flow" doc:name="Mock document AI"/>
+      </otherwise>
+    </choice>
+  </sub-flow>
+
+  <sub-flow name="ai-extraction-mock-sub-flow">
+    <try doc:name="Mock AI with retry">
+      <until-successful maxRetries="${ai.retry.maxRetries}" millisBetweenRetries="${ai.retry.intervalMs}" doc:name="Retry transient failures">
+        <http:request method="POST" config-ref="mock-ai-request-config" path="/ai/v1/extract" doc:name="AI - Mock extract">
+          <http:body><![CDATA[#[output application/json --- { fileName: vars.document.fileName, mimeType: vars.document.mimeType, contentBase64: vars.document.contentBase64 }]]]></http:body>
+          <http:headers><![CDATA[#[{ 'Authorization': 'Bearer ' ++ Mule::p('MOCK_AI_API_KEY'), 'X-Correlation-ID': correlationId }]]]></http:headers>
+          <http:response-validator>
+            <!-- 4xx = permanent (bad request/auth) -> not retried; 5xx/timeouts -> retried -->
+            <http:success-status-code-validator values="200..299,400..499"/>
+          </http:response-validator>
+        </http:request>
+      </until-successful>
+      <error-handler>
+        <on-error-propagate type="ANY" doc:name="Retries exhausted" logException="false">
+          <raise-error type="APP:AI_EXTRACTION_FAILED" doc:name="Raise APP:AI_EXTRACTION_FAILED"
+                       description="#['Mock AI extraction unavailable after retries (' ++ (error.errorType.identifier default 'UNKNOWN') ++ ')']"/>
+        </on-error-propagate>
+      </error-handler>
+    </try>
+    <choice doc:name="Usable response?">
+      <when expression="#[attributes.statusCode &gt;= 400 or (payload.status default '') != 'SUCCEEDED']">
+        <raise-error type="APP:AI_EXTRACTION_FAILED" doc:name="Raise APP:AI_EXTRACTION_FAILED"
+                     description="#['Mock AI rejected the document: HTTP ' ++ (attributes.statusCode as String) ++ ' ' ++ (payload.error default '')]"/>
+      </when>
+    </choice>
+    <ee:transform doc:name="Provider envelope">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ provider: payload.provider, model: payload.model, warnings: payload.warnings default [], extraction: payload.extraction }]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </sub-flow>
+
+  <!-- Claude (Anthropic Messages API) with structured JSON output.
+       Retries 429 / 5xx / 529 / timeouts; other 4xx are permanent. -->
+  <sub-flow name="ai-extraction-claude-sub-flow">
+    <set-variable variableName="claudeSchema" value="#[readUrl('classpath://schemas/claude-extraction-schema.json', 'application/json')]" doc:name="Load output schema"/>
+    <set-payload value="#[vars.document]" doc:name="Document"/>
+    <ee:transform doc:name="Build Claude request">
+      <ee:message>
+        <ee:set-payload resource="dwl/claude-request.dwl"/>
+      </ee:message>
+    </ee:transform>
+    <try doc:name="Claude with retry">
+      <until-successful maxRetries="${ai.retry.maxRetries}" millisBetweenRetries="${ai.retry.intervalMs}" doc:name="Retry transient failures">
+        <http:request method="POST" config-ref="anthropic-request-config" path="/v1/messages" doc:name="AI - Claude messages">
+          <http:headers><![CDATA[#[{
+  'x-api-key': Mule::p('ANTHROPIC_API_KEY'),
+  'anthropic-version': '2023-06-01',
+  'anthropic-beta': 'server-side-fallback-2026-07-01',
+  'content-type': 'application/json'
+}]]]></http:headers>
+          <http:response-validator>
+            <http:success-status-code-validator values="200..299,400..428,430..499"/>
+          </http:response-validator>
+        </http:request>
+      </until-successful>
+      <error-handler>
+        <on-error-propagate type="ANY" doc:name="Retries exhausted" logException="false">
+          <raise-error type="APP:AI_EXTRACTION_FAILED" doc:name="Raise APP:AI_EXTRACTION_FAILED"
+                       description="#['Claude API unavailable after retries (' ++ (error.errorType.identifier default 'UNKNOWN') ++ ')']"/>
+        </on-error-propagate>
+      </error-handler>
+    </try>
+    <choice doc:name="HTTP success?">
+      <when expression="#[attributes.statusCode &gt;= 400]">
+        <!-- never log/return the API key; the error type/message from Anthropic is safe -->
+        <raise-error type="APP:AI_EXTRACTION_FAILED" doc:name="Raise APP:AI_EXTRACTION_FAILED"
+                     description="#['Claude API returned HTTP ' ++ (attributes.statusCode as String) ++ ': ' ++ (payload.error.'type' default '')]"/>
+      </when>
+    </choice>
+    <ee:transform doc:name="Parse Claude response">
+      <ee:message>
+        <ee:set-payload resource="dwl/claude-response.dwl"/>
+      </ee:message>
+    </ee:transform>
+    <choice doc:name="Usable extraction?">
+      <when expression="#[not (payload.ok default false)]">
+        <raise-error type="APP:AI_EXTRACTION_FAILED" doc:name="Raise APP:AI_EXTRACTION_FAILED"
+                     description="#['Claude extraction unusable: ' ++ (payload.reason default '') ++ ' ' ++ (payload.message default '')]"/>
+      </when>
+    </choice>
+    <logger level="INFO" doc:name="Log token usage" category="invoice.process.ai"
+            message="#[output application/json indent=false --- { event: 'ai.claude.usage', invoiceId: vars.invoiceId, model: payload.model, inputTokens: payload.usage.inputTokens, outputTokens: payload.usage.outputTokens }]"/>
+  </sub-flow>
+
+  <!-- =====================================================================
+       ERP posting (used by auto-approval, final approval and recovery)
+       ===================================================================== -->
+  <sub-flow name="erp-posting-sub-flow">
+    <try doc:name="Post to ERP">
+      <http:request method="POST" config-ref="sys-api-request-config" path="/erp/invoices" doc:name="SYS - Post to ERP">
+        <http:body><![CDATA[#[output application/json --- { invoiceId: vars.invoiceId }]]]></http:body>
+        <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+        <http:response-validator>
+          <http:success-status-code-validator values="200..499"/>
+        </http:response-validator>
+      </http:request>
+      <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+      <set-variable variableName="erpResult" value="#[payload]" doc:name="erpResult"/>
+      <set-variable variableName="statusChange" doc:name="POSTED_TO_ERP"
+                    value="#[{ status: 'POSTED_TO_ERP', step: 'ERP_POSTING', actor: 'system', reason: 'Posted to ERP as document ' ++ (payload.erpDocumentNumber default ''), fields: { erpDocumentNumber: payload.erpDocumentNumber, erpPostedAt: payload.postedAt } }]"/>
+      <flow-ref name="sys-patch-status-sub-flow" doc:name="Status: POSTED_TO_ERP"/>
+      <set-variable variableName="finalStatus" value="POSTED_TO_ERP" doc:name="finalStatus"/>
+      <error-handler>
+        <on-error-propagate type="ANY" when="#[vars.recoveryFailureType == 'ERP_POSTING']" doc:name="Recovery mode: propagate" logException="false">
+          <logger level="WARN" doc:name="Log retry failed" category="invoice.process.recovery"
+                  message="#[output application/json indent=false --- { event: 'recovery.erp.failed', invoiceId: vars.invoiceId }]"/>
+        </on-error-propagate>
+        <on-error-continue type="ANY" doc:name="ERP failed" logException="false">
+          <set-variable variableName="erpErrorCode" value="#[vars.downstreamErrorCode default (error.errorType.identifier default 'ERP_ERROR')]" doc:name="ERP error code"/>
+          <set-variable variableName="failure" doc:name="Failure info"
+                        value="#[{ failureType: 'ERP_POSTING', errorCode: vars.erpErrorCode, message: vars.errorOverride.message default error.description, queued: not (['ERP_REJECTED', 'INVALID_INVOICE_STATE'] contains vars.erpErrorCode) }]"/>
+          <remove-variable variableName="errorOverride" doc:name="Clear handled error"/>
+          <choice doc:name="Retryable?">
+            <when expression="#[vars.failure.queued]">
+              <flow-ref name="enqueue-recovery-sub-flow" doc:name="Enqueue for retry"/>
+            </when>
+          </choice>
+          <set-variable variableName="statusChange" doc:name="ERP_POSTING_FAILED"
+                        value="#[{ status: 'ERP_POSTING_FAILED', step: 'ERP_POSTING', outcome: 'FAILED', actor: 'system', reason: (if (vars.failure.queued) 'ERP unavailable; queued for automatic retry: ' else 'ERP rejected the invoice: ') ++ (vars.failure.message default '') }]"/>
+          <flow-ref name="sys-patch-status-sub-flow" doc:name="Status: ERP_POSTING_FAILED"/>
+          <set-variable variableName="finalStatus" value="ERP_POSTING_FAILED" doc:name="finalStatus"/>
+        </on-error-continue>
+      </error-handler>
+    </try>
+  </sub-flow>
+
+  <!-- =====================================================================
+       System API helpers
+       ===================================================================== -->
+  <sub-flow name="sys-patch-status-sub-flow">
+    <http:request method="PATCH" config-ref="sys-api-request-config" path="/invoices/{invoiceId}/status" doc:name="SYS - Update status">
+      <http:body><![CDATA[#[output application/json --- vars.statusChange]]]></http:body>
+      <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+      <http:uri-params><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></http:uri-params>
+      <http:response-validator>
+        <http:success-status-code-validator values="200..499"/>
+      </http:response-validator>
+    </http:request>
+    <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+  </sub-flow>
+
+  <sub-flow name="sys-get-invoice-sub-flow">
+    <http:request method="GET" config-ref="sys-api-request-config" path="/invoices/{invoiceId}" doc:name="SYS - Get invoice">
+      <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+      <http:uri-params><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></http:uri-params>
+      <http:response-validator>
+        <http:success-status-code-validator values="200..499"/>
+      </http:response-validator>
+    </http:request>
+    <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+    <set-variable variableName="currentInvoice" value="#[payload]" doc:name="currentInvoice"/>
+  </sub-flow>
+
+  <sub-flow name="sys-get-document-sub-flow">
+    <http:request method="GET" config-ref="sys-api-request-config" path="/invoices/{invoiceId}/document" doc:name="SYS - Get document">
+      <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+      <http:uri-params><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></http:uri-params>
+      <http:response-validator>
+        <http:success-status-code-validator values="200..499"/>
+      </http:response-validator>
+    </http:request>
+    <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+    <set-variable variableName="document" value="#[payload]" doc:name="document"/>
+  </sub-flow>
+
+  <!-- Best effort: queue failures must never hide the original error -->
+  <sub-flow name="enqueue-recovery-sub-flow">
+    <try doc:name="Enqueue (best effort)">
+      <http:request method="POST" config-ref="sys-api-request-config" path="/recovery-queue" doc:name="SYS - Enqueue recovery">
+        <http:body><![CDATA[#[output application/json --- {
+  invoiceId: vars.invoiceId,
+  failureType: vars.failure.failureType,
+  errorCode: vars.failure.errorCode,
+  errorMessage: vars.failure.message,
+  maxAttempts: vars.config.recovery.maxAttempts,
+  delaySeconds: vars.config.recovery.baseDelaySec
+}]]]></http:body>
+        <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+        <http:response-validator>
+          <http:success-status-code-validator values="200..499"/>
+        </http:response-validator>
+      </http:request>
+      <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+      <error-handler>
+        <on-error-continue type="ANY" doc:name="Log and continue" logException="false">
+          <remove-variable variableName="errorOverride" doc:name="Clear handled error"/>
+          <set-variable variableName="failure" value="#[vars.failure ++ { queued: false }]" doc:name="queued = false"/>
+          <logger level="ERROR" doc:name="Log enqueue failure" category="invoice.process.recovery"
+                  message="#[output application/json indent=false --- { event: 'recovery.enqueue.failed', invoiceId: vars.invoiceId, errorType: error.errorType.identifier }]"/>
+        </on-error-continue>
+      </error-handler>
+    </try>
+  </sub-flow>
+
+  <!-- Best effort audit event: summary of extraction + validation -->
+  <sub-flow name="audit-sub-flow">
+    <try doc:name="Audit (best effort)">
+      <http:request method="POST" config-ref="sys-api-request-config" path="/invoices/{invoiceId}/audit" doc:name="SYS - Audit">
+        <http:body><![CDATA[#[output application/json --- {
+  step: 'EXTRACTION_VALIDATED',
+  outcome: if (vars.fieldValidation.valid) 'SUCCESS' else 'WARNING',
+  actor: 'system',
+  message: 'Extracted by ' ++ (vars.invoice.extraction.provider default '?') ++ ' (confidence ' ++ ((vars.invoice.extraction.overallConfidence default 0) as String) ++ '); ' ++ (sizeOf(vars.fieldValidation.errors default []) as String) ++ ' field error(s), ' ++ (sizeOf(vars.fieldValidation.lowConfidenceFields default []) as String) ++ ' low-confidence field(s)',
+  details: { schemaValid: vars.schemaValidation.valid, errors: (vars.fieldValidation.errors default []) map $.code, lowConfidenceFields: vars.fieldValidation.lowConfidenceFields }
+}]]]></http:body>
+        <http:headers><![CDATA[#[vars.sysHeaders]]]></http:headers>
+        <http:uri-params><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></http:uri-params>
+        <http:response-validator>
+          <http:success-status-code-validator values="200..499"/>
+        </http:response-validator>
+      </http:request>
+      <flow-ref name="check-downstream-sub-flow" doc:name="Check response"/>
+      <error-handler>
+        <on-error-continue type="ANY" doc:name="Ignore audit failure" logException="false">
+          <remove-variable variableName="errorOverride" doc:name="Clear handled error"/>
+          <logger level="WARN" doc:name="Log audit failure" category="invoice.process"
+                  message="#[output application/json indent=false --- { event: 'audit.failed', invoiceId: vars.invoiceId }]"/>
+        </on-error-continue>
+      </error-handler>
+    </try>
+  </sub-flow>
+
+</mule>

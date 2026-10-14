@@ -1,0 +1,11 @@
+# Encrypt with the Secure Properties Tool (AES/CBC) and supply -Dmule.key=<key> at runtime.
+process:
+  clientId: "![REPLACE_WITH_ENCRYPTED_VALUE]"
+  clientSecret: "![REPLACE_WITH_ENCRYPTED_VALUE]"
+internal:
+  clientId: "![REPLACE_WITH_ENCRYPTED_VALUE]"
+  clientSecret: "![REPLACE_WITH_ENCRYPTED_VALUE]"
+mockai:
+  apiKey: "![REPLACE_WITH_ENCRYPTED_VALUE]"
+anthropic:
+  apiKey: "![REPLACE_WITH_ENCRYPTED_VALUE]"

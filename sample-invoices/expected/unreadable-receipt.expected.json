@@ -1,0 +1,183 @@
+{
+  "sampleFile": "images/unreadable-receipt.png",
+  "rawExtraction": {
+    "provider": "MOCK_DOCUMENT_AI",
+    "model": "mock-invoice-extractor-v1",
+    "warnings": [
+      "UNRECOGNISED_IMAGE: simulated OCR could not read this image; manual review required"
+    ],
+    "extraction": {
+      "invoice_number": null,
+      "invoice_date": null,
+      "due_date": null,
+      "vendor_name": null,
+      "vendor_id": null,
+      "purchase_order_number": null,
+      "billing_address": null,
+      "currency": null,
+      "payment_terms": null,
+      "subtotal": null,
+      "total_amount": null,
+      "tax": null,
+      "tax_rate": null,
+      "line_items": [],
+      "field_confidence": {
+        "invoice_number": 0.0,
+        "invoice_date": 0.0,
+        "due_date": 0.0,
+        "vendor_name": 0.0,
+        "vendor_id": 0.0,
+        "purchase_order_number": 0.0,
+        "billing_address": 0.0,
+        "currency": 0.0,
+        "payment_terms": 0.0,
+        "subtotal": 0.0,
+        "total_amount": 0.0,
+        "tax": 0.0,
+        "line_items": 0.0
+      },
+      "overall_confidence": 0.0
+    }
+  },
+  "canonicalInvoice": {
+    "invoiceNumber": null,
+    "normalizedInvoiceNumber": null,
+    "invoiceDate": null,
+    "dueDate": null,
+    "dueDateDerived": false,
+    "vendor": {
+      "id": null,
+      "name": null
+    },
+    "poNumber": null,
+    "billingAddress": null,
+    "currency": null,
+    "paymentTerms": null,
+    "lineItems": [],
+    "subtotal": null,
+    "tax": null,
+    "taxRate": null,
+    "total": null,
+    "extraction": {
+      "provider": "MOCK_DOCUMENT_AI",
+      "model": "mock-invoice-extractor-v1",
+      "overallConfidence": 0.0,
+      "fieldConfidence": {
+        "invoiceNumber": 0.0,
+        "invoiceDate": 0.0,
+        "vendorName": 0.0,
+        "vendorId": 0.0,
+        "poNumber": 0.0,
+        "billingAddress": 0.0,
+        "currency": 0.0,
+        "lineItems": 0.0,
+        "subtotal": 0.0,
+        "tax": 0.0,
+        "total": 0.0,
+        "paymentTerms": 0.0,
+        "dueDate": 0.0
+      },
+      "warnings": [
+        "UNRECOGNISED_IMAGE: simulated OCR could not read this image; manual review required"
+      ]
+    }
+  },
+  "routingDecision": {
+    "status": "MANUAL_REVIEW",
+    "autoApproved": false,
+    "approvalChain": [
+      "FINANCE_DIRECTOR"
+    ],
+    "approvalsRequired": 1,
+    "nextApprovalLevel": "FINANCE_DIRECTOR",
+    "duplicateOf": null,
+    "decisionReason": "Requires review: MISSING_REQUIRED_FIELD, VENDOR_NOT_IDENTIFIED, SUBTOTAL_MISSING, LOW_CONFIDENCE, PO_MISSING",
+    "validationErrors": [
+      {
+        "code": "MISSING_REQUIRED_FIELD",
+        "severity": "BLOCKING",
+        "message": "Required field 'invoiceNumber' is missing or unreadable",
+        "details": {
+          "field": "invoiceNumber"
+        }
+      },
+      {
+        "code": "MISSING_REQUIRED_FIELD",
+        "severity": "BLOCKING",
+        "message": "Required field 'invoiceDate' is missing or unreadable",
+        "details": {
+          "field": "invoiceDate"
+        }
+      },
+      {
+        "code": "MISSING_REQUIRED_FIELD",
+        "severity": "BLOCKING",
+        "message": "Required field 'vendor' is missing or unreadable",
+        "details": {
+          "field": "vendor"
+        }
+      },
+      {
+        "code": "MISSING_REQUIRED_FIELD",
+        "severity": "BLOCKING",
+        "message": "Required field 'currency' is missing or unreadable",
+        "details": {
+          "field": "currency"
+        }
+      },
+      {
+        "code": "MISSING_REQUIRED_FIELD",
+        "severity": "BLOCKING",
+        "message": "Required field 'total' is missing or unreadable",
+        "details": {
+          "field": "total"
+        }
+      },
+      {
+        "code": "MISSING_REQUIRED_FIELD",
+        "severity": "BLOCKING",
+        "message": "Required field 'lineItems' is missing or unreadable",
+        "details": {
+          "field": "lineItems"
+        }
+      },
+      {
+        "code": "VENDOR_NOT_IDENTIFIED",
+        "severity": "BLOCKING",
+        "message": "No vendor ID or vendor name could be extracted"
+      }
+    ],
+    "exceptions": [
+      {
+        "code": "SUBTOTAL_MISSING",
+        "severity": "REVIEW",
+        "message": "Subtotal not found; calculated from line items"
+      },
+      {
+        "code": "EXTRACTION_WARNING",
+        "severity": "INFO",
+        "message": "UNRECOGNISED_IMAGE: simulated OCR could not read this image; manual review required"
+      },
+      {
+        "code": "LOW_CONFIDENCE",
+        "severity": "REVIEW",
+        "message": "Overall extraction confidence 0 is below the 0.85 threshold"
+      },
+      {
+        "code": "PO_MISSING",
+        "severity": "REVIEW",
+        "message": "Invoice does not reference a purchase order"
+      }
+    ],
+    "checks": {
+      "schemaValid": true,
+      "fieldsValid": false,
+      "vendorVerified": false,
+      "duplicateChecked": false,
+      "poMatched": false,
+      "totalsValid": true,
+      "taxValid": true,
+      "extractionConfidence": 0
+    }
+  }
+}

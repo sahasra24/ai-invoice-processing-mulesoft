@@ -1,0 +1,131 @@
+{
+  "sampleFile": "json/duplicate-of-INV-2026-1001.json",
+  "rawExtraction": {
+    "provider": "JSON_UPLOAD",
+    "model": null,
+    "warnings": [],
+    "extraction": {
+      "invoice_number": "inv/2026/1001",
+      "invoice_date": "2026-09-15",
+      "vendor_name": "Acme Office Supplies",
+      "vendor_id": "V-1001",
+      "purchase_order_number": "PO-2026-0001",
+      "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+      "currency": "USD",
+      "line_items": [
+        {
+          "line_number": 1,
+          "item_code": "PAP-A4-500",
+          "description": "A4 Copy Paper 80gsm (box of 5 reams)",
+          "quantity": 100,
+          "unit_price": 5.0,
+          "amount": 500.0
+        },
+        {
+          "line_number": 2,
+          "item_code": "TON-HP-26X",
+          "description": "HP 26X Black Toner Cartridge",
+          "quantity": 10,
+          "unit_price": 30.0,
+          "amount": 300.0
+        }
+      ],
+      "subtotal": 800.0,
+      "tax_rate": 0.08,
+      "tax": 64.0,
+      "total_amount": 864.0,
+      "payment_terms": "Net 30",
+      "due_date": "2026-10-15"
+    }
+  },
+  "canonicalInvoice": {
+    "invoiceNumber": "inv/2026/1001",
+    "normalizedInvoiceNumber": "INV20261001",
+    "invoiceDate": "2026-09-15",
+    "dueDate": "2026-10-15",
+    "dueDateDerived": false,
+    "vendor": {
+      "id": "V-1001",
+      "name": "Acme Office Supplies"
+    },
+    "poNumber": "PO-2026-0001",
+    "billingAddress": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+    "currency": "USD",
+    "paymentTerms": "Net 30",
+    "lineItems": [
+      {
+        "lineNumber": 1,
+        "itemCode": "PAP-A4-500",
+        "description": "A4 Copy Paper 80gsm (box of 5 reams)",
+        "quantity": 100,
+        "unitPrice": 5.0,
+        "amount": 500,
+        "amountDerived": false
+      },
+      {
+        "lineNumber": 2,
+        "itemCode": "TON-HP-26X",
+        "description": "HP 26X Black Toner Cartridge",
+        "quantity": 10,
+        "unitPrice": 30.0,
+        "amount": 300,
+        "amountDerived": false
+      }
+    ],
+    "subtotal": 800,
+    "tax": 64,
+    "taxRate": 0.08,
+    "total": 864,
+    "extraction": {
+      "provider": "JSON_UPLOAD",
+      "model": null,
+      "overallConfidence": 1,
+      "fieldConfidence": {
+        "invoiceNumber": 1,
+        "invoiceDate": 1,
+        "vendorName": 1,
+        "vendorId": 1,
+        "poNumber": 1,
+        "billingAddress": 1,
+        "currency": 1,
+        "lineItems": 1,
+        "subtotal": 1,
+        "tax": 1,
+        "total": 1,
+        "paymentTerms": 1,
+        "dueDate": 1
+      },
+      "warnings": []
+    }
+  },
+  "routingDecision": {
+    "status": "DUPLICATE",
+    "autoApproved": false,
+    "approvalChain": [],
+    "approvalsRequired": 0,
+    "nextApprovalLevel": null,
+    "duplicateOf": "00000000-0000-0000-0000-251798501303",
+    "decisionReason": "Duplicate of invoice 00000000-0000-0000-0000-251798501303",
+    "validationErrors": [],
+    "exceptions": [
+      {
+        "code": "DUPLICATE_INVOICE",
+        "severity": "DUPLICATE",
+        "message": "Invoice INV-2026-1001 was already submitted for this vendor (status APPROVED)",
+        "details": {
+          "duplicateOf": "00000000-0000-0000-0000-251798501303"
+        }
+      }
+    ],
+    "checks": {
+      "schemaValid": true,
+      "fieldsValid": true,
+      "vendorVerified": true,
+      "duplicateChecked": true,
+      "poMatched": true,
+      "totalsValid": true,
+      "taxValid": true,
+      "extractionConfidence": 1
+    }
+  }
+}

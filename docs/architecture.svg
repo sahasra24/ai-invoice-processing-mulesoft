@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .box{fill:#ffffff;stroke:#94a3b8;stroke-width:1.2}
+      .exp{fill:#eff6ff;stroke:#3b82f6;stroke-width:1.6}
+      .prc{fill:#f0fdf4;stroke:#16a34a;stroke-width:1.6}
+      .sys{fill:#fff7ed;stroke:#ea580c;stroke-width:1.6}
+      .ext{fill:#f8fafc;stroke:#64748b;stroke-width:1.2;stroke-dasharray:5 3}
+      .t{font-weight:600;font-size:15px;fill:#0f172a}
+      .s{fill:#334155}
+      .m{fill:#64748b;font-size:11.5px}
+      .ln{stroke:#475569;stroke-width:1.4;fill:none;marker-end:url(#a)}
+      .lbl{fill:#475569;font-size:11px}
+    </style>
+  </defs>
+  <rect width="1200" height="760" fill="#ffffff"/>
+  <text x="600" y="34" text-anchor="middle" font-size="20" font-weight="700" fill="#0f172a">AI-Powered Invoice Processing - API-led connectivity (Mule 4)</text>
+
+  <!-- consumers -->
+  <rect class="box" x="40" y="70" width="200" height="70" rx="8"/>
+  <text class="t" x="140" y="98" text-anchor="middle">Supplier portal</text>
+  <text class="m" x="140" y="118" text-anchor="middle">PDF / PNG / JPG / JSON upload</text>
+  <rect class="box" x="40" y="160" width="200" height="70" rx="8"/>
+  <text class="t" x="140" y="188" text-anchor="middle">Approver app</text>
+  <text class="m" x="140" y="208" text-anchor="middle">approve / reject / track</text>
+  <rect class="box" x="40" y="250" width="200" height="70" rx="8"/>
+  <text class="t" x="140" y="278" text-anchor="middle">Scanner drop folder</text>
+  <text class="m" x="140" y="298" text-anchor="middle">File connector (polling)</text>
+
+  <!-- experience -->
+  <rect class="exp" x="300" y="70" width="270" height="160" rx="10"/>
+  <text class="t" x="435" y="96" text-anchor="middle">invoice-experience-api :8081</text>
+  <text class="s" x="316" y="122">/api/invoices/upload, /process</text>
+  <text class="s" x="316" y="141">/api/invoices/{id}, /status, /history</text>
+  <text class="s" x="316" y="160">/api/invoices/{id}/approve | reject</text>
+  <text class="s" x="316" y="179">/api/vendors, /api/purchase-orders</text>
+  <text class="m" x="316" y="202">Basic auth + RBAC, file type/size/magic bytes,</text>
+  <text class="m" x="316" y="218">Idempotency-Key (Object Store), data isolation</text>
+
+  <!-- process -->
+  <rect class="prc" x="300" y="280" width="270" height="300" rx="10"/>
+  <text class="t" x="435" y="306" text-anchor="middle">invoice-process-api :8082</text>
+  <text class="s" x="316" y="332">1  register document (SHA-256 idempotent)</text>
+  <text class="s" x="316" y="351">2  AI extraction (mock | Claude) + retry</text>
+  <text class="s" x="316" y="370">3  normalize (DataWeave) + JSON schema</text>
+  <text class="s" x="316" y="389">4  field validation + confidence check</text>
+  <text class="s" x="316" y="408">5  vendor verification</text>
+  <text class="s" x="316" y="427">6  duplicate detection</text>
+  <text class="s" x="316" y="446">7  PO matching, totals, tax</text>
+  <text class="s" x="316" y="465">8  approval routing (thresholds)</text>
+  <text class="s" x="316" y="484">9  ERP posting / approvals (OS lock)</text>
+  <text class="m" x="316" y="510">Scheduler + Batch Job: recovery queue,</text>
+  <text class="m" x="316" y="526">exponential backoff, dead letter</text>
+  <text class="m" x="316" y="548">File listener: drop folder intake</text>
+  <text class="m" x="316" y="564">until-successful, error handlers, audit</text>
+
+  <!-- system -->
+  <rect class="sys" x="660" y="280" width="270" height="300" rx="10"/>
+  <text class="t" x="795" y="306" text-anchor="middle">invoice-system-api :8083</text>
+  <text class="s" x="676" y="332">/sys/v1/invoices (+status, extraction,</text>
+  <text class="s" x="676" y="351">   document, history, audit, approvals)</text>
+  <text class="s" x="676" y="370">/sys/v1/invoice-duplicates</text>
+  <text class="s" x="676" y="389">/sys/v1/vendors, /purchase-orders</text>
+  <text class="s" x="676" y="408">/sys/v1/erp/invoices  (JSON -> XML)</text>
+  <text class="s" x="676" y="427">/sys/v1/recovery-queue (+claim)</text>
+  <text class="m" x="676" y="458">Database connector: parameterized SQL,</text>
+  <text class="m" x="676" y="474">local transactions, optimistic locking,</text>
+  <text class="m" x="676" y="490">unique keys (dedupe_key, approvals),</text>
+  <text class="m" x="676" y="506">FOR UPDATE SKIP LOCKED queue claim</text>
+  <text class="m" x="676" y="530">File connector: document storage</text>
+  <text class="m" x="676" y="546">ERP adapter: until-successful retry,</text>
+  <text class="m" x="676" y="562">idempotent posting, PO consumption</text>
+
+  <!-- externals -->
+  <rect class="ext" x="660" y="70" width="230" height="80" rx="8"/>
+  <text class="t" x="775" y="98" text-anchor="middle">Mock Document AI :8090</text>
+  <text class="m" x="775" y="118" text-anchor="middle">/ai/v1/extract (PDF text, image</text>
+  <text class="m" x="775" y="134" text-anchor="middle">fixtures, confidence scores)</text>
+  <rect class="ext" x="920" y="70" width="240" height="80" rx="8"/>
+  <text class="t" x="1040" y="98" text-anchor="middle">Anthropic Claude API</text>
+  <text class="m" x="1040" y="118" text-anchor="middle">/v1/messages, PDF/image blocks,</text>
+  <text class="m" x="1040" y="134" text-anchor="middle">json_schema structured output</text>
+
+  <rect class="ext" x="990" y="290" width="180" height="90" rx="8"/>
+  <text class="t" x="1080" y="318" text-anchor="middle">MySQL 8</text>
+  <text class="m" x="1080" y="338" text-anchor="middle">vendors, POs, invoices,</text>
+  <text class="m" x="1080" y="354" text-anchor="middle">lines, approvals, audit,</text>
+  <text class="m" x="1080" y="370" text-anchor="middle">recovery_queue</text>
+  <rect class="ext" x="990" y="400" width="180" height="80" rx="8"/>
+  <text class="t" x="1080" y="428" text-anchor="middle">Simulated ERP :8090</text>
+  <text class="m" x="1080" y="448" text-anchor="middle">XML AP invoice API,</text>
+  <text class="m" x="1080" y="464" text-anchor="middle">Basic auth, outage switch</text>
+  <rect class="ext" x="990" y="500" width="180" height="70" rx="8"/>
+  <text class="t" x="1080" y="528" text-anchor="middle">Document storage</text>
+  <text class="m" x="1080" y="548" text-anchor="middle">local folder (S3 in prod)</text>
+
+  <!-- arrows -->
+  <path class="ln" d="M240,105 L300,120"/>
+  <path class="ln" d="M240,195 L300,180"/>
+  <path class="ln" d="M240,285 L300,360"/>
+  <text class="lbl" x="250" y="345">FILE_DROP</text>
+  <path class="ln" d="M420,230 L420,280"/>
+  <text class="lbl" x="426" y="260">upload / process / decisions</text>
+  <path class="ln" d="M570,150 C620,150 620,250 700,280"/>
+  <text class="lbl" x="590" y="205">reads (invoice,</text>
+  <text class="lbl" x="590" y="219">vendor, PO, history)</text>
+  <path class="ln" d="M570,400 L660,400"/>
+  <text class="lbl" x="582" y="392">client_id/secret</text>
+  <path class="ln" d="M520,280 C560,200 640,160 700,150"/>
+  <text class="lbl" x="560" y="262">AI_PROVIDER=mock</text>
+  <path class="ln" d="M560,300 C700,230 900,200 980,150"/>
+  <text class="lbl" x="820" y="196">AI_PROVIDER=claude (HTTPS)</text>
+  <path class="ln" d="M930,335 L990,335"/>
+  <path class="ln" d="M930,440 L990,440"/>
+  <path class="ln" d="M930,535 L990,535"/>
+
+  <!-- legend / cross-cutting -->
+  <rect class="box" x="40" y="610" width="1120" height="120" rx="10"/>
+  <text class="t" x="60" y="636">Cross-cutting concerns</text>
+  <text class="s" x="60" y="660">Correlation: X-Correlation-ID propagated Experience -> Process -> System -> AI/ERP; logged via MDC and stored in processing_audit_logs.</text>
+  <text class="s" x="60" y="680">Reliability: until-successful retries, recoverable failure queue (Scheduler + Batch, backoff 60s..1h, DEAD after 5), idempotency at 3 levels (Idempotency-Key, SHA-256, ERP ExternalReference).</text>
+  <text class="s" x="60" y="700">Security: Basic auth + RBAC (Experience), client credentials (Process/System), secure properties + env vars, segregation of duties, Object Store approval lock.</text>
+  <text class="s" x="60" y="720">Errors: one global handler per app -> consistent JSON error body; downstream 4xx propagated, 5xx details never exposed.</text>
+</svg>

@@ -1,0 +1,31 @@
+{
+  "invoiceId": "5b6a7c00-0000-4000-8000-0000000000aa",
+  "invoiceNumber": "INV-2026-1001",
+  "status": "POSTED_TO_ERP",
+  "idempotentReplay": false,
+  "vendorId": "V-1001",
+  "vendorName": "Acme Office Supplies",
+  "poNumber": "PO-2026-0001",
+  "currency": "USD",
+  "totalAmount": 864,
+  "extractionProvider": "MOCK_DOCUMENT_AI",
+  "extractionConfidence": 0.958,
+  "decisionReason": "Auto-approved: all checks passed and total 864 <= 1000",
+  "approval": {
+    "required": false,
+    "chain": [],
+    "approvalsRequired": 0,
+    "approvalsReceived": 0,
+    "nextApprovalLevel": null
+  },
+  "duplicateOf": null,
+  "validationErrors": [],
+  "exceptions": [],
+  "erp": {
+    "documentNumber": "5100000001",
+    "postedAt": "2026-10-13T09:00:00Z"
+  },
+  "recovery": null,
+  "correlationId": "test",
+  "processedAt": "2026-10-13T09:00:01Z"
+}

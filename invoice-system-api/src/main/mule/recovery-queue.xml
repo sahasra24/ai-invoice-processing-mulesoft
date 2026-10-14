@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+
+  <!-- =====================================================================
+       Recoverable failure queue (dead-letter store) backed by MySQL.
+
+       POST  /sys/v1/recovery-queue           enqueue (de-duplicated per invoice + failure type)
+       POST  /sys/v1/recovery-queue/claim     atomically claim due items (FOR UPDATE SKIP LOCKED,
+                                              safe with several Process API workers)
+       PATCH /sys/v1/recovery-queue/{queueId} record attempt result (RESOLVED / PENDING+backoff / DEAD)
+       GET   /sys/v1/recovery-queue?status=   operations view (monitoring dashboards)
+       ===================================================================== -->
+  <flow name="sys-enqueue-recovery-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/recovery-queue" allowedMethods="POST" doc:name="POST /recovery-queue">
+      <http:response statusCode="#[vars.httpStatus default 201]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <set-variable variableName="item" value="#[payload]" doc:name="Queue item"/>
+    <validation:is-true doc:name="Valid failure type" message="failureType must be AI_EXTRACTION, ERP_POSTING, DATABASE or UNKNOWN"
+                        expression="#[['AI_EXTRACTION','ERP_POSTING','DATABASE','UNKNOWN'] contains (vars.item.failureType default '')]"/>
+    <db:select config-ref="invoice-db-config" doc:name="Open item for invoice?" target="open">
+      <db:sql><![CDATA[SELECT queue_id, status, attempt_count FROM recovery_queue
+WHERE invoice_id = :invoiceId AND failure_type = :failureType AND status IN ('PENDING','IN_PROGRESS')]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ invoiceId: vars.item.invoiceId, failureType: vars.item.failureType }]]]></db:input-parameters>
+    </db:select>
+    <choice doc:name="Already queued?">
+      <when expression="#[not isEmpty(vars.open)]">
+        <set-variable variableName="httpStatus" value="#[200]" doc:name="200"/>
+        <set-payload mimeType="application/json" doc:name="Existing item"
+                     value="#[output application/json --- { queueId: vars.open[0].queue_id, status: vars.open[0].status, alreadyQueued: true }]"/>
+      </when>
+      <otherwise>
+        <db:insert config-ref="invoice-db-config" doc:name="Insert queue item" autoGenerateKeys="true">
+          <db:sql><![CDATA[INSERT INTO recovery_queue (invoice_id, failure_type, error_code, error_message, attempt_count, max_attempts, next_attempt_at, status, correlation_id)
+VALUES (:invoiceId, :failureType, :errorCode, :errorMessage, 0, :maxAttempts, DATE_ADD(NOW(), INTERVAL :delaySeconds SECOND), 'PENDING', :correlationId)]]></db:sql>
+          <db:input-parameters><![CDATA[#[{
+  invoiceId: vars.item.invoiceId,
+  failureType: vars.item.failureType,
+  errorCode: vars.item.errorCode,
+  errorMessage: do { var m = (vars.item.errorMessage default '') as String --- if (sizeOf(m) > 1000) m[0 to 999] else m },
+  maxAttempts: (vars.item.maxAttempts default 5) as Number,
+  delaySeconds: (vars.item.delaySeconds default 60) as Number,
+  correlationId: correlationId
+}]]]></db:input-parameters>
+        </db:insert>
+        <logger level="WARN" doc:name="Log enqueued" category="invoice.system.recovery"
+                message="#[output application/json indent=false --- { event: 'recovery.enqueued', invoiceId: vars.item.invoiceId, failureType: vars.item.failureType }]"/>
+        <set-payload mimeType="application/json" doc:name="Created item"
+                     value="#[output application/json --- { queueId: payload.generatedKeys.GENERATED_KEY default (valuesOf(payload.generatedKeys)[0] default null), status: 'PENDING', alreadyQueued: false }]"/>
+      </otherwise>
+    </choice>
+  </flow>
+
+  <flow name="sys-claim-recovery-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/recovery-queue/claim" allowedMethods="POST" doc:name="POST /recovery-queue/claim">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <set-variable variableName="limit" doc:name="Batch size"
+                  value="#[do { var l = (attributes.queryParams.limit default '10') as Number --- if (l &lt; 1) 1 else if (l &gt; 50) 50 else l }]"/>
+    <try transactionalAction="ALWAYS_BEGIN" transactionType="LOCAL" doc:name="Claim transaction">
+      <db:select config-ref="invoice-db-config" doc:name="Lock due items" target="due">
+        <db:sql><![CDATA[SELECT queue_id, invoice_id, failure_type, error_code, attempt_count, max_attempts, correlation_id
+FROM recovery_queue
+WHERE (status = 'PENDING' AND next_attempt_at <= NOW())
+   OR (status = 'IN_PROGRESS' AND updated_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE))
+ORDER BY next_attempt_at
+LIMIT :limit
+FOR UPDATE SKIP LOCKED]]></db:sql>
+        <db:input-parameters><![CDATA[#[{ limit: vars.limit }]]]></db:input-parameters>
+      </db:select>
+      <foreach collection="#[vars.due]" doc:name="For each claimed item">
+        <db:update config-ref="invoice-db-config" doc:name="Mark IN_PROGRESS">
+          <db:sql><![CDATA[UPDATE recovery_queue SET status = 'IN_PROGRESS' WHERE queue_id = :queueId]]></db:sql>
+          <db:input-parameters><![CDATA[#[{ queueId: payload.queue_id }]]]></db:input-parameters>
+        </db:update>
+      </foreach>
+    </try>
+    <ee:transform doc:name="Claimed items">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.due map ((r) -> {
+  queueId: r.queue_id,
+  invoiceId: r.invoice_id,
+  failureType: r.failure_type,
+  errorCode: r.error_code,
+  attemptCount: r.attempt_count,
+  maxAttempts: r.max_attempts,
+  originalCorrelationId: r.correlation_id
+})]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+  <flow name="sys-update-recovery-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/recovery-queue/{queueId}" allowedMethods="PATCH" doc:name="PATCH /recovery-queue/{queueId}">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <validation:is-true doc:name="Valid status" message="status must be PENDING, RESOLVED or DEAD"
+                        expression="#[['PENDING','RESOLVED','DEAD'] contains (payload.status default '')]"/>
+    <db:update config-ref="invoice-db-config" doc:name="Update queue item" target="result">
+      <db:sql><![CDATA[UPDATE recovery_queue SET
+  status = :status,
+  attempt_count = COALESCE(:attemptCount, attempt_count),
+  next_attempt_at = CASE WHEN :delaySeconds IS NULL THEN next_attempt_at ELSE DATE_ADD(NOW(), INTERVAL :delaySeconds SECOND) END,
+  error_code = COALESCE(:errorCode, error_code),
+  error_message = COALESCE(:errorMessage, error_message)
+WHERE queue_id = :queueId]]></db:sql>
+      <db:input-parameters><![CDATA[#[{
+  queueId: attributes.uriParams.queueId as Number,
+  status: payload.status,
+  attemptCount: payload.attemptCount,
+  delaySeconds: payload.delaySeconds,
+  errorCode: payload.errorCode,
+  errorMessage: payload.errorMessage
+}]]]></db:input-parameters>
+    </db:update>
+    <choice doc:name="Found?">
+      <when expression="#[vars.result.affectedRows == 0]">
+        <set-variable variableName="errorOverride" doc:name="404 override"
+                      value="#[{ httpStatus: 404, code: 'QUEUE_ITEM_NOT_FOUND', message: 'Recovery queue item not found' }]"/>
+        <raise-error type="APP:NOT_FOUND" description="Queue item not found" doc:name="Raise APP:NOT_FOUND"/>
+      </when>
+    </choice>
+    <set-payload mimeType="application/json" doc:name="Response"
+                 value="#[output application/json --- { queueId: attributes.uriParams.queueId as Number, status: payload.status }]"/>
+  </flow>
+
+  <flow name="sys-list-recovery-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/recovery-queue" allowedMethods="GET" doc:name="GET /recovery-queue">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <db:select config-ref="invoice-db-config" doc:name="Select queue items">
+      <db:sql><![CDATA[SELECT queue_id, invoice_id, failure_type, error_code, error_message, attempt_count, max_attempts, status,
+       DATE_FORMAT(next_attempt_at, '%Y-%m-%d %T') AS next_attempt_at,
+       DATE_FORMAT(created_at, '%Y-%m-%d %T') AS created_at
+FROM recovery_queue
+WHERE (:status IS NULL OR status = :status)
+ORDER BY created_at DESC
+LIMIT 200]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ status: if (isEmpty(attributes.queryParams.status default '')) null else attributes.queryParams.status }]]]></db:input-parameters>
+    </db:select>
+    <ee:transform doc:name="Queue view">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  items: payload map ((r) -> {
+    queueId: r.queue_id, invoiceId: r.invoice_id, failureType: r.failure_type, errorCode: r.error_code,
+    errorMessage: r.error_message, attemptCount: r.attempt_count, maxAttempts: r.max_attempts,
+    status: r.status, nextAttemptAt: r.next_attempt_at, createdAt: r.created_at
+  })
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+</mule>

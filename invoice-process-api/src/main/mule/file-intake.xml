@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+  <!-- =====================================================================
+       Supplier drop folder (File connector)
+       Suppliers / scanners drop PDF, PNG, JPG or JSON invoices into
+       ${FILE_INBOUND_DIR}. Each file is processed exactly once:
+         * timeBetweenSizeCheck - waits until the file is fully written
+         * idempotent-message-validator - name+size+mtime remembered in an Object Store
+         * autoDelete - the original is removed, a copy is archived under
+           processed/ or failed/ with a timestamp prefix
+       ===================================================================== -->
+  <flow name="file-intake-flow" initialState="${file.flowState}">
+    <file:listener config-ref="inbound-file-config" directory="." recursive="false" autoDelete="true"
+                   timeBetweenSizeCheck="2" timeBetweenSizeCheckUnit="SECONDS" outputMimeType="application/octet-stream"
+                   doc:name="On new invoice file">
+      <scheduling-strategy>
+        <fixed-frequency frequency="${file.pollFrequencyMs}"/>
+      </scheduling-strategy>
+      <file:matcher filenamePattern="regex:(?i)^[^.].*\.(pdf|png|jpg|jpeg|json)$"/>
+    </file:listener>
+    <idempotent-message-validator idExpression="#[attributes.fileName ++ '|' ++ (attributes.size as String) ++ '|' ++ (attributes.lastModifiedTime as String)]"
+                                  objectStore="file-idempotency-store" doc:name="Skip already processed files"/>
+    <flow-ref name="init-context-sub-flow" doc:name="Init context"/>
+    <set-variable variableName="fileName" value="#[attributes.fileName]" doc:name="fileName"/>
+    <set-variable variableName="fileContent" value="#[payload]" doc:name="Keep file content"/>
+    <ee:transform doc:name="Build document">
+      <ee:variables>
+        <ee:set-variable variableName="document"><![CDATA[%dw 2.0
+output application/java
+import * from dw::core::Binaries
+import hashWith from dw::Crypto
+var ext = lower((vars.fileName splitBy ".")[-1])
+var MIME = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", json: "application/json" }
+var bytes = payload as Binary
+---
+{
+  fileName: vars.fileName replace /[^A-Za-z0-9._\-]/ with "_",
+  mimeType: MIME[ext],
+  sizeBytes: sizeOf(toBase64(bytes)) * 3 / 4,
+  sha256: lower(toHex(hashWith(bytes, "SHA-256"))),
+  contentBase64: toBase64(bytes)
+}]]></ee:set-variable>
+        <ee:set-variable variableName="request"><![CDATA[%dw 2.0
+output application/java
+---
+{ sourceChannel: "FILE_DROP", autoProcess: true }]]></ee:set-variable>
+        <ee:set-variable variableName="submittedBy"><![CDATA[%dw 2.0
+output application/java
+---
+Mule::p('file.dropUser')]]></ee:set-variable>
+      </ee:variables>
+    </ee:transform>
+    <choice doc:name="Within size limit?">
+      <when expression="#[vars.document.sizeBytes &gt; vars.config.maxFileSizeBytes]">
+        <raise-error type="APP:PAYLOAD_TOO_LARGE" description="File exceeds the maximum allowed size" doc:name="Raise APP:PAYLOAD_TOO_LARGE"/>
+      </when>
+    </choice>
+    <flow-ref name="register-invoice-sub-flow" doc:name="Register + process"/>
+    <set-variable variableName="resultStatus" value="#[payload.status]" doc:name="resultStatus"/>
+    <file:write config-ref="archive-file-config" doc:name="Archive (processed)" createParentDirectories="true"
+                path="#['processed/' ++ (now() as String { format: 'yyyyMMdd-HHmmss' }) ++ '_' ++ vars.document.fileName]">
+      <file:content><![CDATA[#[vars.fileContent]]]></file:content>
+    </file:write>
+    <logger level="INFO" doc:name="Log file processed" category="invoice.process.file"
+            message="#[output application/json indent=false --- { event: 'file.processed', invoiceId: vars.invoiceId, status: vars.resultStatus }]"/>
+    <error-handler>
+      <on-error-continue type="MULE:DUPLICATE_MESSAGE" doc:name="Already processed" logException="false">
+        <logger level="INFO" doc:name="Log duplicate file" category="invoice.process.file"
+                message="#[output application/json indent=false --- { event: 'file.skipped', reason: 'ALREADY_PROCESSED' }]"/>
+      </on-error-continue>
+      <on-error-continue type="ANY" doc:name="Move to failed" logException="false">
+        <logger level="ERROR" doc:name="Log file failure" category="invoice.process.file"
+                message="#[output application/json indent=false --- { event: 'file.failed', invoiceId: vars.invoiceId default null, errorType: (error.errorType.namespace default '') ++ ':' ++ (error.errorType.identifier default '') }]"/>
+        <try doc:name="Archive (failed)">
+          <file:write config-ref="archive-file-config" doc:name="Archive (failed)" createParentDirectories="true"
+                      path="#['failed/' ++ (now() as String { format: 'yyyyMMdd-HHmmss' }) ++ '_' ++ ((vars.fileName default 'unknown') replace /[^A-Za-z0-9._\-]/ with '_')]">
+            <file:content><![CDATA[#[vars.fileContent]]]></file:content>
+          </file:write>
+          <error-handler>
+            <on-error-continue type="ANY" doc:name="Ignore" logException="false">
+              <logger level="ERROR" doc:name="Could not archive" message="#[output application/json indent=false --- { event: 'file.archive.failed' }]"/>
+            </on-error-continue>
+          </error-handler>
+        </try>
+      </on-error-continue>
+    </error-handler>
+  </flow>
+
+</mule>

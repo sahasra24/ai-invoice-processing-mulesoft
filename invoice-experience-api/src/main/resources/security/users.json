@@ -1,0 +1,12 @@
+{
+  "_comment": "LOCAL DEMO ONLY. passwordSha256 = sha256('username:password'). Plain-text demo passwords are listed in README.md. Replace with an IdP / API Manager OAuth policy in any shared environment.",
+  "users": [
+    { "username": "supplier1", "displayName": "Acme Billing Portal User",   "roles": ["SUPPLIER"],         "enabled": true, "passwordSha256": "5a7bc005c67840718c11e8409a2896e6fc427d906906a74506fdf421ea7d36db" },
+    { "username": "supplier2", "displayName": "Globex Billing Portal User", "roles": ["SUPPLIER"],         "enabled": true, "passwordSha256": "3bf9f291463f179dbf52e168d0b4c88f1a2da0f9b18edd0e1f66f14a39f9671d" },
+    { "username": "apclerk1",  "displayName": "AP Clerk",                   "roles": ["AP_CLERK"],         "enabled": true, "passwordSha256": "c7b5c462ff3652cf286248f38e2cc765583eb75cc8c34cb039524e5985facbd5" },
+    { "username": "approver1", "displayName": "Department Approver",        "roles": ["APPROVER"],         "enabled": true, "passwordSha256": "9532b971f847a0c579465e627e2c736597fb50d2bee53281d322618ac20dca45" },
+    { "username": "manager1",  "displayName": "Finance Manager",            "roles": ["MANAGER"],          "enabled": true, "passwordSha256": "3f26018338a627402e9b4a9d08c1ed0f7006b4fa4a7ba22759ae2ea7d5aa6ffa" },
+    { "username": "director1", "displayName": "Finance Director",           "roles": ["FINANCE_DIRECTOR"], "enabled": true, "passwordSha256": "9ccd2295f08634d19eab960d3b4481eb11aae11269ca00918b7af3fd2e7bf45c" },
+    { "username": "admin1",    "displayName": "Integration Admin",          "roles": ["ADMIN"],            "enabled": true, "passwordSha256": "282c5fd5b45f31d56e2c65bb22b19ef40c7f127735803a892978f780f9f6c850" }
+  ]
+}

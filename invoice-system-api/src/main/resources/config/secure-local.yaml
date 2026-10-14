@@ -1,0 +1,5 @@
+# Secure properties for LOCAL runs.
+# Local defaults live in local.yaml (overridable with env vars), so nothing
+# needs to be encrypted here. The file must exist because the
+# <secure-properties:config> element loads config/secure-${env}.yaml.
+placeholder: "not-used"

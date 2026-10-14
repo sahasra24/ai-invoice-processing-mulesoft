@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:os="http://www.mulesoft.org/schema/mule/os"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd">
+
+  <global-property doc:name="Default environment" name="env" value="local"/>
+  <global-property doc:name="Default secure key (local only)" name="mule.key" value="LocalOnlyKey2026"/>
+  <configuration-properties doc:name="Environment properties" file="config/${env}.yaml"/>
+  <secure-properties:config name="secure-properties-config" doc:name="Secure Properties"
+                            file="config/secure-${env}.yaml" key="${mule.key}">
+    <secure-properties:encrypt algorithm="AES" mode="CBC"/>
+  </secure-properties:config>
+
+  <configuration doc:name="Default error handler" defaultErrorHandler-ref="global-error-handler"/>
+
+  <!-- =====================================================================
+       Public listener.
+       LOCAL: plain HTTP on 8081 for the demo.
+       HTTPS: (a) on CloudHub 2.0 TLS terminates at the ingress load balancer
+              (https://<app>.<region>.cloudhub.io) - keep this config as-is;
+              (b) on-prem / RTF: generate a keystore and switch to this listener:
+                keytool -genkeypair -alias invoice-api -keyalg RSA -keysize 2048 -validity 365 \
+                        -keystore src/main/resources/tls/keystore.p12 -storetype PKCS12
+                <http:listener-config name="experience-api-listener-config">
+                  <http:listener-connection host="${http.host}" port="8443" protocol="HTTPS">
+                    <tls:context>
+                      <tls:key-store type="pkcs12" path="tls/keystore.p12" alias="invoice-api"
+                                     keyPassword="${secure::tls.keyPassword}" password="${secure::tls.storePassword}"/>
+                    </tls:context>
+                  </http:listener-connection>
+                </http:listener-config>
+              (add the tls namespace: xmlns:tls="http://www.mulesoft.org/schema/mule/tls")
+       ===================================================================== -->
+  <http:listener-config name="experience-api-listener-config" doc:name="Experience API listener">
+    <http:listener-connection host="${http.host}" port="${http.port}"/>
+  </http:listener-config>
+
+  <http:request-config name="process-api-request-config" doc:name="Process API" basePath="${process.api.basePath}"
+                       responseTimeout="${process.api.timeoutMs}">
+    <http:request-connection host="${PROCESS_API_HOST}" port="${PROCESS_API_PORT}" protocol="${PROCESS_API_PROTOCOL}"/>
+  </http:request-config>
+
+  <!-- Simple reads (invoice, vendor, PO, history) go straight to the System API:
+       no orchestration is needed, so an extra Process API hop would add latency only. -->
+  <http:request-config name="sys-api-request-config" doc:name="System API" basePath="${sys.api.basePath}"
+                       responseTimeout="${sys.api.timeoutMs}">
+    <http:request-connection host="${SYS_API_HOST}" port="${SYS_API_PORT}" protocol="${SYS_API_PROTOCOL}"/>
+  </http:request-config>
+
+  <!-- Client-supplied Idempotency-Key -> stored response (safe retries of POSTs) -->
+  <os:object-store name="idempotency-store" doc:name="Idempotency store" persistent="true"
+                   entryTtl="${idempotency.ttlHours}" entryTtlUnit="HOURS" maxEntries="50000"/>
+
+  <!-- =====================================================================
+       Security sub-flows
+       ===================================================================== -->
+  <!-- HTTP Basic authentication -> vars.user = { username, displayName, roles } -->
+  <sub-flow name="authenticate-sub-flow">
+    <ee:transform doc:name="Load user store">
+      <ee:variables>
+        <ee:set-variable variableName="users"><![CDATA[%dw 2.0
+output application/json
+---
+readUrl("classpath://" ++ Mule::p('security.usersFile'), "application/json")]]></ee:set-variable>
+      </ee:variables>
+    </ee:transform>
+    <ee:transform doc:name="Authenticate">
+      <ee:variables>
+        <ee:set-variable variableName="auth" resource="dwl/authenticate.dwl"/>
+      </ee:variables>
+    </ee:transform>
+    <remove-variable variableName="users" doc:name="Drop user store"/>
+    <choice doc:name="Authenticated?">
+      <when expression="#[not (vars.auth.authenticated default false)]">
+        <set-variable variableName="errorOverride" doc:name="401 details"
+                      value="#[{ httpStatus: 401, code: 'UNAUTHORIZED', message: vars.auth.reason }]"/>
+        <raise-error type="APP:UNAUTHORIZED" description="Authentication failed" doc:name="Raise APP:UNAUTHORIZED"/>
+      </when>
+    </choice>
+    <set-variable variableName="user" value="#[vars.auth.user]" doc:name="user"/>
+    <remove-variable variableName="auth" doc:name="Drop auth result"/>
+  </sub-flow>
+
+  <!-- Role-based access control. Caller sets vars.requiredRoles = [ ... ] -->
+  <sub-flow name="authorize-sub-flow">
+    <choice doc:name="Has a required role?">
+      <when expression="#[isEmpty((vars.user.roles default []) filter ((r) -> (vars.requiredRoles default []) contains r))]">
+        <set-variable variableName="errorOverride" doc:name="403 details"
+                      value="#[{ httpStatus: 403, code: 'FORBIDDEN', message: 'This operation requires one of the roles: ' ++ ((vars.requiredRoles default []) joinBy ', ') }]"/>
+        <logger level="WARN" doc:name="Log access denied" category="invoice.experience.security"
+                message="#[output application/json indent=false --- { event: 'access.denied', user: vars.user.username, required: vars.requiredRoles }]"/>
+        <raise-error type="APP:FORBIDDEN" description="Insufficient role" doc:name="Raise APP:FORBIDDEN"/>
+      </when>
+    </choice>
+  </sub-flow>
+
+  <!-- Suppliers may only see invoices they submitted (404 hides existence) -->
+  <sub-flow name="enforce-ownership-sub-flow">
+    <choice doc:name="Supplier viewing someone else's invoice?">
+      <when expression="#[(vars.user.roles default []) == ['SUPPLIER'] and payload.submittedBy != vars.user.username]">
+        <set-variable variableName="errorOverride" doc:name="404 details"
+                      value="#[{ httpStatus: 404, code: 'INVOICE_NOT_FOUND', message: 'Invoice ' ++ (vars.invoiceId default '') ++ ' not found' }]"/>
+        <raise-error type="APP:NOT_FOUND" description="Not owner" doc:name="Raise APP:NOT_FOUND"/>
+      </when>
+    </choice>
+  </sub-flow>
+
+  <!-- 4xx from Process/System APIs -> APP:DOWNSTREAM_REJECTED with the original status, code and message -->
+  <sub-flow name="check-downstream-sub-flow">
+    <choice doc:name="Downstream 4xx?">
+      <when expression="#[(attributes.statusCode default 200) &gt;= 400]">
+        <set-variable variableName="errorOverride" doc:name="Propagate downstream error"
+                      value="#[{ httpStatus: attributes.statusCode, code: payload.error.code default 'DOWNSTREAM_ERROR', message: payload.error.message default ('Request failed with HTTP ' ++ (attributes.statusCode as String)), details: payload.error.details }]"/>
+        <raise-error type="APP:DOWNSTREAM_REJECTED" doc:name="Raise APP:DOWNSTREAM_REJECTED"
+                     description="#['Downstream returned HTTP ' ++ (attributes.statusCode as String)]"/>
+      </when>
+    </choice>
+  </sub-flow>
+
+  <!-- =====================================================================
+       Idempotency-Key support for POST operations
+       ===================================================================== -->
+  <sub-flow name="idempotency-lookup-sub-flow">
+    <set-variable variableName="idempotencyKey" doc:name="Idempotency key"
+                  value="#[if (isEmpty(attributes.headers.'idempotency-key' default '')) null else (vars.user.username ++ '|' ++ attributes.requestPath ++ '|' ++ attributes.headers.'idempotency-key')]"/>
+    <set-variable variableName="idempotentReplay" value="#[false]" doc:name="idempotentReplay = false"/>
+    <choice doc:name="Key supplied?">
+      <when expression="#[vars.idempotencyKey != null]">
+        <os:contains key="#[vars.idempotencyKey]" objectStore="idempotency-store" target="seen" doc:name="Seen before?"/>
+        <choice doc:name="Replay?">
+          <when expression="#[vars.seen]">
+            <os:retrieve key="#[vars.idempotencyKey]" objectStore="idempotency-store" target="stored" doc:name="Stored response"/>
+            <set-variable variableName="idempotentReplay" value="#[true]" doc:name="idempotentReplay = true"/>
+            <set-variable variableName="httpStatus" value="#[vars.stored.httpStatus]" doc:name="Stored status"/>
+            <set-payload value="#[output application/json --- vars.stored.body]" mimeType="application/json" doc:name="Stored body"/>
+          </when>
+        </choice>
+      </when>
+    </choice>
+  </sub-flow>
+
+  <sub-flow name="idempotency-save-sub-flow">
+    <choice doc:name="Cacheable?">
+      <when expression="#[vars.idempotencyKey != null and (vars.httpStatus default 200) &lt; 500]">
+        <os:store key="#[vars.idempotencyKey]" objectStore="idempotency-store" doc:name="Store response">
+          <os:value><![CDATA[#[output application/java --- { httpStatus: vars.httpStatus default 200, body: read(write(payload, 'application/json'), 'application/json') }]]]></os:value>
+        </os:store>
+      </when>
+    </choice>
+  </sub-flow>
+
+  <!-- =====================================================================
+       Global error handler
+       ===================================================================== -->
+  <error-handler name="global-error-handler" doc:name="Global error handler">
+    <on-error-continue type="ANY" enableNotifications="true" logException="false" doc:name="On any error">
+      <set-variable variableName="correlationIdValue" value="#[correlationId]" doc:name="Capture correlation id"/>
+      <ee:transform doc:name="Map error to HTTP response">
+        <ee:message>
+          <ee:set-payload resource="dwl/error-response.dwl"/>
+        </ee:message>
+      </ee:transform>
+      <set-variable variableName="httpStatus" value="#[payload.httpStatus]" doc:name="Set httpStatus"/>
+      <choice doc:name="Server or client error?">
+        <when expression="#[vars.httpStatus &gt;= 500]">
+          <logger level="ERROR" doc:name="Log server error" category="invoice.experience.error"
+                  message="#[output application/json indent=false --- { event: 'request.failed', httpStatus: vars.httpStatus, user: vars.user.username default null, errorType: (error.errorType.namespace default '') ++ ':' ++ (error.errorType.identifier default ''), detail: error.description }]"/>
+        </when>
+        <otherwise>
+          <logger level="WARN" doc:name="Log client error" category="invoice.experience.error"
+                  message="#[output application/json indent=false --- { event: 'request.rejected', httpStatus: vars.httpStatus, user: vars.user.username default null, code: payload.body.error.code }]"/>
+        </otherwise>
+      </choice>
+      <set-payload value="#[output application/json --- payload.body]" mimeType="application/json" doc:name="Error body"/>
+    </on-error-continue>
+  </error-handler>
+
+</mule>

@@ -1,0 +1,12 @@
+{
+  "minMuleVersion": "4.9.0",
+  "javaSpecificationVersions": ["17"],
+  "secureProperties": [
+    "mule.key",
+    "DB_USER",
+    "DB_PASSWORD",
+    "INTERNAL_CLIENT_SECRET",
+    "ERP_USERNAME",
+    "ERP_PASSWORD"
+  ]
+}

@@ -1,0 +1,719 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+        http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+
+  <!-- =====================================================================
+       POST /sys/v1/invoices
+       Registers a new invoice (status RECEIVED) and stores its source
+       document. Idempotent on the document SHA-256: re-sending the same file
+       returns the existing invoice with idempotentReplay=true (HTTP 200).
+       ===================================================================== -->
+  <flow name="sys-create-invoice-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/invoices" allowedMethods="POST" doc:name="POST /invoices">
+      <http:response statusCode="#[vars.httpStatus default 201]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <set-variable variableName="request" value="#[payload]" doc:name="Keep request"/>
+    <validation:is-true doc:name="Valid source channel"
+                        expression="#[['API_UPLOAD','API_JSON','FILE_DROP'] contains (vars.request.sourceChannel default '')]"
+                        message="sourceChannel must be API_UPLOAD, API_JSON or FILE_DROP"/>
+    <validation:is-true doc:name="submittedBy present" expression="#[not isEmpty(vars.request.submittedBy default '')]"
+                        message="submittedBy is required"/>
+    <validation:is-true doc:name="Document fields present"
+                        expression="#[vars.request.document != null and not isEmpty(vars.request.document.contentBase64 default '') and ((vars.request.document.sha256 default '') matches /^[a-f0-9]{64}$/)]"
+                        message="document.fileName, mimeType, sizeBytes, sha256 (hex) and contentBase64 are required"/>
+
+    <db:select config-ref="invoice-db-config" doc:name="Find document by SHA-256" target="existingDocs">
+      <db:sql><![CDATA[SELECT d.invoice_id, i.status
+FROM invoice_documents d JOIN invoices i ON i.invoice_id = d.invoice_id
+WHERE d.content_sha256 = :sha256]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ sha256: vars.request.document.sha256 }]]]></db:input-parameters>
+    </db:select>
+
+    <choice doc:name="Already received?">
+      <when expression="#[not isEmpty(vars.existingDocs)]">
+        <set-variable variableName="httpStatus" value="#[200]" doc:name="200 OK (replay)"/>
+        <logger level="INFO" doc:name="Log idempotent replay" category="invoice.system"
+                message="#[output application/json indent=false --- { event: 'invoice.create.replay', invoiceId: vars.existingDocs[0].invoice_id }]"/>
+        <ee:transform doc:name="Replay response">
+          <ee:message>
+            <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ invoiceId: vars.existingDocs[0].invoice_id, status: vars.existingDocs[0].status, idempotentReplay: true }]]></ee:set-payload>
+          </ee:message>
+        </ee:transform>
+      </when>
+      <otherwise>
+        <set-variable variableName="invoiceId" value="#[vars.request.invoiceId default uuid()]" doc:name="Generate invoiceId"/>
+        <set-variable variableName="storagePath"
+                      value="#[vars.invoiceId ++ '/' ++ ((vars.request.document.fileName default 'document') replace /[^A-Za-z0-9._\-]/ with '_')]"
+                      doc:name="Storage path"/>
+        <!-- 1) write the file first: if the DB insert later fails we only leave an orphan file, never a DB row without a document -->
+        <file:write config-ref="document-storage-config" path="#[vars.storagePath]" mode="CREATE_NEW" createParentDirectories="true" doc:name="Store document">
+          <file:content><![CDATA[#[import fromBase64 from dw::core::Binaries --- fromBase64(vars.request.document.contentBase64)]]]></file:content>
+        </file:write>
+        <!-- 2) invoice + document metadata atomically -->
+        <try transactionalAction="ALWAYS_BEGIN" transactionType="LOCAL" doc:name="Transaction">
+          <db:insert config-ref="invoice-db-config" doc:name="Insert invoice">
+            <db:sql><![CDATA[INSERT INTO invoices (invoice_id, status, source_channel, submitted_by, correlation_id)
+VALUES (:invoiceId, 'RECEIVED', :sourceChannel, :submittedBy, :correlationId)]]></db:sql>
+            <db:input-parameters><![CDATA[#[{
+  invoiceId: vars.invoiceId,
+  sourceChannel: vars.request.sourceChannel,
+  submittedBy: vars.request.submittedBy,
+  correlationId: correlationId
+}]]]></db:input-parameters>
+          </db:insert>
+          <db:insert config-ref="invoice-db-config" doc:name="Insert document metadata">
+            <db:sql><![CDATA[INSERT INTO invoice_documents (invoice_id, file_name, mime_type, file_size_bytes, content_sha256, storage_path, uploaded_by)
+VALUES (:invoiceId, :fileName, :mimeType, :sizeBytes, :sha256, :storagePath, :uploadedBy)]]></db:sql>
+            <db:input-parameters><![CDATA[#[{
+  invoiceId: vars.invoiceId,
+  fileName: vars.request.document.fileName,
+  mimeType: vars.request.document.mimeType,
+  sizeBytes: vars.request.document.sizeBytes as Number,
+  sha256: vars.request.document.sha256,
+  storagePath: vars.storagePath,
+  uploadedBy: vars.request.submittedBy
+}]]]></db:input-parameters>
+          </db:insert>
+          <db:insert config-ref="invoice-db-config" doc:name="Audit: received">
+            <db:sql><![CDATA[INSERT INTO processing_audit_logs (invoice_id, correlation_id, step, outcome, to_status, message, actor)
+VALUES (:invoiceId, :correlationId, 'RECEIVE', 'SUCCESS', 'RECEIVED', :message, :actor)]]></db:sql>
+            <db:input-parameters><![CDATA[#[{
+  invoiceId: vars.invoiceId,
+  correlationId: correlationId,
+  message: 'Document received via ' ++ vars.request.sourceChannel ++ ' (' ++ (vars.request.document.mimeType default '') ++ ', ' ++ ((vars.request.document.sizeBytes default 0) as String) ++ ' bytes)',
+  actor: vars.request.submittedBy
+}]]]></db:input-parameters>
+          </db:insert>
+        </try>
+        <logger level="INFO" doc:name="Log created" category="invoice.system"
+                message="#[output application/json indent=false --- { event: 'invoice.created', invoiceId: vars.invoiceId, channel: vars.request.sourceChannel }]"/>
+        <ee:transform doc:name="Created response">
+          <ee:message>
+            <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ invoiceId: vars.invoiceId, status: "RECEIVED", idempotentReplay: false }]]></ee:set-payload>
+          </ee:message>
+        </ee:transform>
+      </otherwise>
+    </choice>
+  </flow>
+
+  <!-- =====================================================================
+       GET /sys/v1/invoices/{invoiceId}
+       ===================================================================== -->
+  <flow name="sys-get-invoice-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/invoices/{invoiceId}" allowedMethods="GET" doc:name="GET /invoices/{invoiceId}">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <set-variable variableName="invoiceId" value="#[attributes.uriParams.invoiceId]" doc:name="invoiceId"/>
+    <flow-ref name="sys-load-invoice-sub-flow" doc:name="Load invoice"/>
+  </flow>
+
+  <!-- Loads invoice + lines + approvals + document; raises 404 when missing.
+       Reused by the GET endpoint and the ERP posting flow. -->
+  <sub-flow name="sys-load-invoice-sub-flow">
+    <db:select config-ref="invoice-db-config" doc:name="Select invoice" target="invoiceRows">
+      <db:sql><![CDATA[SELECT invoice_id, invoice_number, normalized_invoice_number, vendor_id, extracted_vendor_id,
+       extracted_vendor_name, po_number,
+       DATE_FORMAT(invoice_date, '%Y-%m-%d') AS invoice_date,
+       DATE_FORMAT(due_date, '%Y-%m-%d') AS due_date,
+       currency, billing_address, payment_terms, subtotal_amount, tax_amount, tax_rate, total_amount,
+       status, approval_chain, approvals_required, approvals_received, extraction_provider,
+       extraction_confidence, source_channel,
+       CAST(validation_errors AS CHAR) AS validation_errors,
+       CAST(exceptions AS CHAR) AS exceptions,
+       duplicate_of, erp_document_number,
+       DATE_FORMAT(erp_posted_at, '%Y-%m-%dT%TZ') AS erp_posted_at,
+       rejection_reason, submitted_by, correlation_id, version,
+       DATE_FORMAT(created_at, '%Y-%m-%dT%TZ') AS created_at,
+       DATE_FORMAT(updated_at, '%Y-%m-%dT%TZ') AS updated_at
+FROM invoices
+WHERE invoice_id = :invoiceId]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></db:input-parameters>
+    </db:select>
+    <choice doc:name="Found?">
+      <when expression="#[isEmpty(vars.invoiceRows)]">
+        <set-variable variableName="errorOverride" doc:name="404 override"
+                      value="#[{ httpStatus: 404, code: 'INVOICE_NOT_FOUND', message: 'Invoice ' ++ (vars.invoiceId default '') ++ ' not found' }]"/>
+        <raise-error type="APP:NOT_FOUND" description="Invoice not found" doc:name="Raise APP:NOT_FOUND"/>
+      </when>
+    </choice>
+    <set-variable variableName="invoiceRow" value="#[vars.invoiceRows[0]]" doc:name="invoiceRow"/>
+    <db:select config-ref="invoice-db-config" doc:name="Select line items" target="lineRows">
+      <db:sql><![CDATA[SELECT line_number, item_code, description, quantity, unit_price, line_amount, po_line_number, match_status
+FROM invoice_line_items WHERE invoice_id = :invoiceId ORDER BY line_number]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></db:input-parameters>
+    </db:select>
+    <db:select config-ref="invoice-db-config" doc:name="Select approvals" target="approvalRows">
+      <db:sql><![CDATA[SELECT approval_level, decision, decided_by, decided_by_role, comments,
+       DATE_FORMAT(decided_at, '%Y-%m-%dT%TZ') AS decided_at
+FROM approval_records WHERE invoice_id = :invoiceId ORDER BY decided_at, approval_id]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></db:input-parameters>
+    </db:select>
+    <db:select config-ref="invoice-db-config" doc:name="Select document" target="documentRows">
+      <db:sql><![CDATA[SELECT file_name, mime_type, file_size_bytes, content_sha256, storage_path, uploaded_by,
+       DATE_FORMAT(uploaded_at, '%Y-%m-%dT%TZ') AS uploaded_at
+FROM invoice_documents WHERE invoice_id = :invoiceId]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></db:input-parameters>
+    </db:select>
+    <set-variable variableName="documentRow" value="#[vars.documentRows[0]]" doc:name="documentRow"/>
+    <ee:transform doc:name="Build invoice view">
+      <ee:message>
+        <ee:set-payload resource="dwl/invoice-view.dwl"/>
+      </ee:message>
+    </ee:transform>
+  </sub-flow>
+
+  <!-- =====================================================================
+       GET /sys/v1/invoices?status=&vendorId=&submittedBy=&fromDate=&toDate=&page=&size=
+       Static SQL with optional filters "(:p IS NULL OR col = :p)" keeps the
+       query fully parameterized (no string concatenation => no SQL injection).
+       ===================================================================== -->
+  <flow name="sys-list-invoices-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/invoices" allowedMethods="GET" doc:name="GET /invoices">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <ee:transform doc:name="Build filter">
+      <ee:variables>
+        <ee:set-variable variableName="filter"><![CDATA[%dw 2.0
+output application/java
+var q = attributes.queryParams
+var size = (q.size default "20") as Number
+var page = (q.page default "1") as Number
+var maxSize = Mule::p('query.maxPageSize') as Number
+fun blankToNull(v) = if (v == null or isEmpty(v)) null else v
+---
+{
+  status: blankToNull(q.status),
+  vendorId: blankToNull(q.vendorId),
+  submittedBy: blankToNull(q.submittedBy),
+  fromDate: blankToNull(q.fromDate),
+  toDate: blankToNull(q.toDate),
+  page: if (page < 1) 1 else page,
+  size: if (size < 1) 1 else if (size > maxSize) maxSize else size
+}]]></ee:set-variable>
+      </ee:variables>
+    </ee:transform>
+    <db:select config-ref="invoice-db-config" doc:name="Count" target="countRows">
+      <db:sql><![CDATA[SELECT COUNT(*) AS total FROM invoices
+WHERE (:status IS NULL OR status = :status)
+  AND (:vendorId IS NULL OR vendor_id = :vendorId OR extracted_vendor_id = :vendorId)
+  AND (:submittedBy IS NULL OR submitted_by = :submittedBy)
+  AND (:fromDate IS NULL OR created_at >= :fromDate)
+  AND (:toDate IS NULL OR created_at < DATE_ADD(:toDate, INTERVAL 1 DAY))]]></db:sql>
+      <db:input-parameters><![CDATA[#[vars.filter - "page" - "size"]]]></db:input-parameters>
+    </db:select>
+    <db:select config-ref="invoice-db-config" doc:name="Select page">
+      <db:sql><![CDATA[SELECT invoice_id, invoice_number, COALESCE(vendor_id, extracted_vendor_id) AS vendor_id,
+       extracted_vendor_name, po_number, DATE_FORMAT(invoice_date, '%Y-%m-%d') AS invoice_date,
+       currency, total_amount, status, extraction_confidence, submitted_by,
+       DATE_FORMAT(created_at, '%Y-%m-%dT%TZ') AS created_at,
+       DATE_FORMAT(updated_at, '%Y-%m-%dT%TZ') AS updated_at
+FROM invoices
+WHERE (:status IS NULL OR status = :status)
+  AND (:vendorId IS NULL OR vendor_id = :vendorId OR extracted_vendor_id = :vendorId)
+  AND (:submittedBy IS NULL OR submitted_by = :submittedBy)
+  AND (:fromDate IS NULL OR created_at >= :fromDate)
+  AND (:toDate IS NULL OR created_at < DATE_ADD(:toDate, INTERVAL 1 DAY))
+ORDER BY created_at DESC, invoice_id
+LIMIT :limit OFFSET :offset]]></db:sql>
+      <db:input-parameters><![CDATA[#[(vars.filter - "page" - "size") ++ { limit: vars.filter.size, offset: (vars.filter.page - 1) * vars.filter.size }]]]></db:input-parameters>
+    </db:select>
+    <ee:transform doc:name="Page response">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var total = vars.countRows[0].total as Number
+---
+{
+  page: vars.filter.page,
+  size: vars.filter.size,
+  totalElements: total,
+  totalPages: ceil(total / vars.filter.size),
+  items: payload map ((r) -> {
+    invoiceId: r.invoice_id,
+    invoiceNumber: r.invoice_number,
+    vendorId: r.vendor_id,
+    vendorName: r.extracted_vendor_name,
+    poNumber: r.po_number,
+    invoiceDate: r.invoice_date,
+    currency: r.currency,
+    totalAmount: r.total_amount,
+    status: r.status,
+    extractionConfidence: r.extraction_confidence,
+    submittedBy: r.submitted_by,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  })
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+  <!-- =====================================================================
+       PUT /sys/v1/invoices/{invoiceId}/extraction
+       Saves the normalized AI extraction and replaces the line items
+       (single local transaction, bulk insert).
+       ===================================================================== -->
+  <flow name="sys-save-extraction-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/invoices/{invoiceId}/extraction" allowedMethods="PUT" doc:name="PUT /invoices/{invoiceId}/extraction">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <set-variable variableName="invoiceId" value="#[attributes.uriParams.invoiceId]" doc:name="invoiceId"/>
+    <set-variable variableName="inv" value="#[payload]" doc:name="Canonical invoice"/>
+    <try transactionalAction="ALWAYS_BEGIN" transactionType="LOCAL" doc:name="Transaction">
+      <db:update config-ref="invoice-db-config" doc:name="Update invoice header" target="updateResult">
+        <db:sql><![CDATA[UPDATE invoices SET
+  invoice_number = :invoiceNumber,
+  normalized_invoice_number = :normalizedInvoiceNumber,
+  extracted_vendor_id = :vendorId,
+  extracted_vendor_name = :vendorName,
+  po_number = :poNumber,
+  invoice_date = :invoiceDate,
+  due_date = :dueDate,
+  currency = :currency,
+  billing_address = :billingAddress,
+  payment_terms = :paymentTerms,
+  subtotal_amount = :subtotal,
+  tax_amount = :tax,
+  tax_rate = :taxRate,
+  total_amount = :total,
+  extraction_provider = :provider,
+  extraction_confidence = :confidence,
+  version = version + 1
+WHERE invoice_id = :invoiceId]]></db:sql>
+        <db:input-parameters><![CDATA[#[{
+  invoiceId: vars.invoiceId,
+  invoiceNumber: vars.inv.invoiceNumber,
+  normalizedInvoiceNumber: vars.inv.normalizedInvoiceNumber,
+  vendorId: vars.inv.vendor.id,
+  vendorName: vars.inv.vendor.name,
+  poNumber: vars.inv.poNumber,
+  invoiceDate: vars.inv.invoiceDate,
+  dueDate: vars.inv.dueDate,
+  currency: vars.inv.currency,
+  billingAddress: vars.inv.billingAddress,
+  paymentTerms: vars.inv.paymentTerms,
+  subtotal: vars.inv.subtotal,
+  tax: vars.inv.tax,
+  taxRate: vars.inv.taxRate,
+  total: vars.inv.total,
+  provider: vars.inv.extraction.provider,
+  confidence: vars.inv.extraction.overallConfidence
+}]]]></db:input-parameters>
+      </db:update>
+      <choice doc:name="Invoice exists?">
+        <when expression="#[vars.updateResult.affectedRows == 0]">
+          <set-variable variableName="errorOverride" doc:name="404 override"
+                        value="#[{ httpStatus: 404, code: 'INVOICE_NOT_FOUND', message: 'Invoice ' ++ vars.invoiceId ++ ' not found' }]"/>
+          <raise-error type="APP:NOT_FOUND" description="Invoice not found" doc:name="Raise APP:NOT_FOUND"/>
+        </when>
+      </choice>
+      <db:delete config-ref="invoice-db-config" doc:name="Delete previous lines">
+        <db:sql><![CDATA[DELETE FROM invoice_line_items WHERE invoice_id = :invoiceId]]></db:sql>
+        <db:input-parameters><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></db:input-parameters>
+      </db:delete>
+      <choice doc:name="Has line items?">
+        <when expression="#[not isEmpty(vars.inv.lineItems default [])]">
+          <db:bulk-insert config-ref="invoice-db-config" doc:name="Bulk insert line items">
+            <db:bulk-input-parameters><![CDATA[#[(vars.inv.lineItems default []) map ((li) -> {
+  invoiceId: vars.invoiceId,
+  lineNumber: li.lineNumber,
+  itemCode: li.itemCode,
+  description: li.description,
+  quantity: li.quantity,
+  unitPrice: li.unitPrice,
+  amount: li.amount
+})]]]></db:bulk-input-parameters>
+            <db:sql><![CDATA[INSERT INTO invoice_line_items (invoice_id, line_number, item_code, description, quantity, unit_price, line_amount)
+VALUES (:invoiceId, :lineNumber, :itemCode, :description, :quantity, :unitPrice, :amount)]]></db:sql>
+          </db:bulk-insert>
+        </when>
+      </choice>
+    </try>
+    <ee:transform doc:name="Response">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ invoiceId: vars.invoiceId, saved: true, lineItems: sizeOf(vars.inv.lineItems default []) }]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+  <!-- =====================================================================
+       PATCH /sys/v1/invoices/{invoiceId}/status
+       Optimistic concurrency: the update only applies when the current
+       status/version match expectedStatus/expectedVersion (409 otherwise).
+       Writes the audit record and PO line match results in the same transaction.
+       The dedupe_key unique index turns a concurrent duplicate into a 409.
+       ===================================================================== -->
+  <flow name="sys-update-status-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/invoices/{invoiceId}/status" allowedMethods="PATCH" doc:name="PATCH /invoices/{invoiceId}/status">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <set-variable variableName="invoiceId" value="#[attributes.uriParams.invoiceId]" doc:name="invoiceId"/>
+    <set-variable variableName="change" value="#[payload]" doc:name="Status change"/>
+    <validation:is-true doc:name="Valid status" message="Unknown status value"
+                        expression="#[['RECEIVED','PROCESSING','EXTRACTION_FAILED','VALIDATION_FAILED','DUPLICATE','MANUAL_REVIEW','PENDING_APPROVAL','APPROVED','REJECTED','POSTED_TO_ERP','ERP_POSTING_FAILED','FAILED'] contains (vars.change.status default '')]"/>
+    <db:select config-ref="invoice-db-config" doc:name="Current status" target="current">
+      <db:sql><![CDATA[SELECT status, version FROM invoices WHERE invoice_id = :invoiceId]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ invoiceId: vars.invoiceId }]]]></db:input-parameters>
+    </db:select>
+    <choice doc:name="Exists?">
+      <when expression="#[isEmpty(vars.current)]">
+        <set-variable variableName="errorOverride" doc:name="404 override"
+                      value="#[{ httpStatus: 404, code: 'INVOICE_NOT_FOUND', message: 'Invoice ' ++ vars.invoiceId ++ ' not found' }]"/>
+        <raise-error type="APP:NOT_FOUND" description="Invoice not found" doc:name="Raise APP:NOT_FOUND"/>
+      </when>
+    </choice>
+    <try transactionalAction="ALWAYS_BEGIN" transactionType="LOCAL" doc:name="Transaction">
+      <db:update config-ref="invoice-db-config" doc:name="Update status" target="updateResult">
+        <db:sql><![CDATA[UPDATE invoices SET
+  status = :status,
+  vendor_id = COALESCE(:vendorId, vendor_id),
+  approval_chain = COALESCE(:approvalChain, approval_chain),
+  approvals_required = COALESCE(:approvalsRequired, approvals_required),
+  approvals_received = COALESCE(:approvalsReceived, approvals_received),
+  validation_errors = COALESCE(:validationErrors, validation_errors),
+  exceptions = COALESCE(:exceptions, exceptions),
+  duplicate_of = COALESCE(:duplicateOf, duplicate_of),
+  erp_document_number = COALESCE(:erpDocumentNumber, erp_document_number),
+  erp_posted_at = COALESCE(:erpPostedAt, erp_posted_at),
+  rejection_reason = COALESCE(:rejectionReason, rejection_reason),
+  version = version + 1
+WHERE invoice_id = :invoiceId
+  AND (:expectedStatus IS NULL OR status = :expectedStatus)
+  AND (:expectedVersion IS NULL OR version = :expectedVersion)]]></db:sql>
+        <db:input-parameters><![CDATA[#[%dw 2.0
+var f = vars.change.fields default {}
+fun jsonOrNull(v) = if (v == null) null else write(v, "application/json", { indent: false })
+fun toDbTimestamp(t) = if (t == null) null else ((t as DateTime) >> "UTC") as String { format: "yyyy-MM-dd HH:mm:ss" }
+---
+{
+  invoiceId: vars.invoiceId,
+  status: vars.change.status,
+  expectedStatus: vars.change.expectedStatus,
+  expectedVersion: vars.change.expectedVersion,
+  vendorId: f.vendorId,
+  approvalChain: if (f.approvalChain is Array) (f.approvalChain joinBy ",") else f.approvalChain,
+  approvalsRequired: f.approvalsRequired,
+  approvalsReceived: f.approvalsReceived,
+  validationErrors: jsonOrNull(f.validationErrors),
+  exceptions: jsonOrNull(f.exceptions),
+  duplicateOf: f.duplicateOf,
+  erpDocumentNumber: f.erpDocumentNumber,
+  erpPostedAt: toDbTimestamp(f.erpPostedAt),
+  rejectionReason: f.rejectionReason
+}]]]></db:input-parameters>
+      </db:update>
+      <choice doc:name="Applied?">
+        <when expression="#[vars.updateResult.affectedRows == 0]">
+          <set-variable variableName="errorOverride" doc:name="409 override"
+                        value="#[{ httpStatus: 409, code: 'STALE_UPDATE', message: 'Invoice is ' ++ vars.current[0].status ++ ' (version ' ++ (vars.current[0].version as String) ++ '); expected ' ++ (vars.change.expectedStatus default '*') ++ ' / version ' ++ ((vars.change.expectedVersion default '*') as String) }]"/>
+          <raise-error type="APP:CONFLICT" description="Optimistic lock failure" doc:name="Raise APP:CONFLICT"/>
+        </when>
+      </choice>
+      <foreach collection="#[vars.change.fields.lineMatches default []]" doc:name="For each PO line match">
+        <db:update config-ref="invoice-db-config" doc:name="Update line match">
+          <db:sql><![CDATA[UPDATE invoice_line_items SET po_line_number = :poLine, match_status = :status
+WHERE invoice_id = :invoiceId AND line_number = :invoiceLine]]></db:sql>
+          <db:input-parameters><![CDATA[#[{ invoiceId: vars.invoiceId, invoiceLine: payload.invoiceLine, poLine: payload.poLine, status: payload.status }]]]></db:input-parameters>
+        </db:update>
+      </foreach>
+      <db:insert config-ref="invoice-db-config" doc:name="Audit status change">
+        <db:sql><![CDATA[INSERT INTO processing_audit_logs (invoice_id, correlation_id, step, outcome, from_status, to_status, message, actor, details)
+VALUES (:invoiceId, :correlationId, :step, :outcome, :fromStatus, :toStatus, :message, :actor, :details)]]></db:sql>
+        <db:input-parameters><![CDATA[#[{
+  invoiceId: vars.invoiceId,
+  correlationId: correlationId,
+  step: vars.change.step default 'STATUS_CHANGE',
+  outcome: vars.change.outcome default 'SUCCESS',
+  fromStatus: vars.current[0].status,
+  toStatus: vars.change.status,
+  message: do { var m = (vars.change.reason default ('Status changed to ' ++ vars.change.status)) as String --- if (sizeOf(m) > 1000) m[0 to 999] else m },
+  actor: vars.change.actor default 'system',
+  details: if (vars.change.details == null) null else write(vars.change.details, 'application/json', { indent: false })
+}]]]></db:input-parameters>
+      </db:insert>
+    </try>
+    <logger level="INFO" doc:name="Log status change" category="invoice.system"
+            message="#[output application/json indent=false --- { event: 'invoice.status.changed', invoiceId: vars.invoiceId, from: vars.current[0].status, to: vars.change.status }]"/>
+    <ee:transform doc:name="Response">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ invoiceId: vars.invoiceId, previousStatus: vars.current[0].status, status: vars.change.status, version: (vars.current[0].version as Number) + 1 }]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+  <!-- =====================================================================
+       GET /sys/v1/invoice-duplicates?vendorId=&normalizedInvoiceNumber=&totalAmount=&invoiceDate=&excludeInvoiceId=
+       ===================================================================== -->
+  <flow name="sys-duplicate-check-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/invoice-duplicates" allowedMethods="GET" doc:name="GET /invoice-duplicates">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <validation:is-true doc:name="vendorId and normalizedInvoiceNumber required"
+                        expression="#[not isEmpty(attributes.queryParams.vendorId default '') and not isEmpty(attributes.queryParams.normalizedInvoiceNumber default '')]"
+                        message="vendorId and normalizedInvoiceNumber query parameters are required"/>
+    <set-variable variableName="q" doc:name="Query params" value="#[{
+      vendorId: attributes.queryParams.vendorId,
+      normalized: upper(attributes.queryParams.normalizedInvoiceNumber),
+      total: if (isEmpty(attributes.queryParams.totalAmount default '')) null else attributes.queryParams.totalAmount as Number,
+      invoiceDate: if (isEmpty(attributes.queryParams.invoiceDate default '')) null else attributes.queryParams.invoiceDate,
+      exclude: attributes.queryParams.excludeInvoiceId default '',
+      windowDays: Mule::p('query.duplicateDateWindowDays') as Number
+    }]"/>
+    <db:select config-ref="invoice-db-config" doc:name="Exact matches" target="exact">
+      <db:sql><![CDATA[SELECT invoice_id, invoice_number, status, total_amount, DATE_FORMAT(invoice_date, '%Y-%m-%d') AS invoice_date
+FROM invoices
+WHERE (vendor_id = :vendorId OR extracted_vendor_id = :vendorId)
+  AND normalized_invoice_number = :normalized
+  AND invoice_id <> :exclude
+  AND status NOT IN ('DUPLICATE','REJECTED','VALIDATION_FAILED','FAILED')]]></db:sql>
+      <db:input-parameters><![CDATA[#[vars.q - "total" - "invoiceDate" - "windowDays"]]]></db:input-parameters>
+    </db:select>
+    <db:select config-ref="invoice-db-config" doc:name="Possible matches" target="possible">
+      <db:sql><![CDATA[SELECT invoice_id, invoice_number, status, total_amount, DATE_FORMAT(invoice_date, '%Y-%m-%d') AS invoice_date
+FROM invoices
+WHERE (vendor_id = :vendorId OR extracted_vendor_id = :vendorId)
+  AND :total IS NOT NULL AND :invoiceDate IS NOT NULL
+  AND total_amount = :total
+  AND invoice_date BETWEEN DATE_SUB(:invoiceDate, INTERVAL :windowDays DAY) AND DATE_ADD(:invoiceDate, INTERVAL :windowDays DAY)
+  AND COALESCE(normalized_invoice_number, '') <> :normalized
+  AND invoice_id <> :exclude
+  AND status NOT IN ('DUPLICATE','REJECTED','VALIDATION_FAILED','FAILED')
+LIMIT 10]]></db:sql>
+      <db:input-parameters><![CDATA[#[vars.q]]]></db:input-parameters>
+    </db:select>
+    <ee:transform doc:name="Response">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+fun view(rows) = rows map ((r) -> {
+  invoiceId: r.invoice_id, invoiceNumber: r.invoice_number, status: r.status,
+  totalAmount: r.total_amount, invoiceDate: r.invoice_date
+})
+---
+{ exactMatches: view(vars.exact), possibleMatches: view(vars.possible) }]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+  <!-- =====================================================================
+       GET /sys/v1/invoices/{invoiceId}/document  -> metadata + base64 content
+       (used by the Process API to re-process an invoice from the recovery queue)
+       ===================================================================== -->
+  <flow name="sys-get-document-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/invoices/{invoiceId}/document" allowedMethods="GET" doc:name="GET /invoices/{invoiceId}/document">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <db:select config-ref="invoice-db-config" doc:name="Select document" target="docs">
+      <db:sql><![CDATA[SELECT file_name, mime_type, file_size_bytes, content_sha256, storage_path
+FROM invoice_documents WHERE invoice_id = :invoiceId]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ invoiceId: attributes.uriParams.invoiceId }]]]></db:input-parameters>
+    </db:select>
+    <choice doc:name="Found?">
+      <when expression="#[isEmpty(vars.docs)]">
+        <set-variable variableName="errorOverride" doc:name="404 override"
+                      value="#[{ httpStatus: 404, code: 'DOCUMENT_NOT_FOUND', message: 'No document stored for this invoice' }]"/>
+        <raise-error type="APP:NOT_FOUND" description="Document not found" doc:name="Raise APP:NOT_FOUND"/>
+      </when>
+    </choice>
+    <file:read config-ref="document-storage-config" path="#[vars.docs[0].storage_path]" doc:name="Read document" outputMimeType="application/octet-stream"/>
+    <ee:transform doc:name="Document response">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+import toBase64 from dw::core::Binaries
+---
+{
+  fileName: vars.docs[0].file_name,
+  mimeType: vars.docs[0].mime_type,
+  sizeBytes: vars.docs[0].file_size_bytes,
+  sha256: vars.docs[0].content_sha256,
+  contentBase64: toBase64(payload as Binary)
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+  <!-- =====================================================================
+       GET  /sys/v1/invoices/{invoiceId}/history   - audit trail
+       POST /sys/v1/invoices/{invoiceId}/audit     - append audit record
+       ===================================================================== -->
+  <flow name="sys-get-history-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/invoices/{invoiceId}/history" allowedMethods="GET" doc:name="GET /invoices/{invoiceId}/history">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <db:select config-ref="invoice-db-config" doc:name="Select audit trail">
+      <db:sql><![CDATA[SELECT audit_id, correlation_id, step, outcome, from_status, to_status, message, actor,
+       CAST(details AS CHAR) AS details, DATE_FORMAT(created_at, '%Y-%m-%dT%T.%fZ') AS created_at
+FROM processing_audit_logs
+WHERE invoice_id = :invoiceId
+ORDER BY created_at, audit_id]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ invoiceId: attributes.uriParams.invoiceId }]]]></db:input-parameters>
+    </db:select>
+    <ee:transform doc:name="History response">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  invoiceId: attributes.uriParams.invoiceId,
+  events: payload map ((r) -> {
+    auditId: r.audit_id,
+    timestamp: r.created_at,
+    step: r.step,
+    outcome: r.outcome,
+    fromStatus: r.from_status,
+    toStatus: r.to_status,
+    message: r.message,
+    actor: r.actor,
+    correlationId: r.correlation_id,
+    details: if (r.details == null) null else read(r.details, "application/json")
+  })
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+  <flow name="sys-add-audit-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/invoices/{invoiceId}/audit" allowedMethods="POST" doc:name="POST /invoices/{invoiceId}/audit">
+      <http:response statusCode="#[vars.httpStatus default 201]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <validation:is-true doc:name="Valid outcome" message="outcome must be STARTED, SUCCESS, FAILED, WARNING or INFO"
+                        expression="#[['STARTED','SUCCESS','FAILED','WARNING','INFO'] contains (payload.outcome default '')]"/>
+    <db:insert config-ref="invoice-db-config" doc:name="Insert audit record">
+      <db:sql><![CDATA[INSERT INTO processing_audit_logs (invoice_id, correlation_id, step, outcome, message, actor, details)
+VALUES (:invoiceId, :correlationId, :step, :outcome, :message, :actor, :details)]]></db:sql>
+      <db:input-parameters><![CDATA[#[{
+  invoiceId: attributes.uriParams.invoiceId,
+  correlationId: correlationId,
+  step: do { var st = (payload.step default 'NOTE') as String --- if (sizeOf(st) > 50) st[0 to 49] else st },
+  outcome: payload.outcome,
+  message: payload.message,
+  actor: payload.actor default 'system',
+  details: if (payload.details == null) null else write(payload.details, 'application/json', { indent: false })
+}]]]></db:input-parameters>
+    </db:insert>
+    <set-payload value='#[output application/json --- { recorded: true }]' mimeType="application/json" doc:name="Response"/>
+  </flow>
+
+  <!-- =====================================================================
+       POST /sys/v1/invoices/{invoiceId}/approvals
+       Unique constraints (invoice, level) and (invoice, user) are the
+       last line of defence against double / duplicate approvals (409).
+       ===================================================================== -->
+  <flow name="sys-add-approval-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/invoices/{invoiceId}/approvals" allowedMethods="POST" doc:name="POST /invoices/{invoiceId}/approvals">
+      <http:response statusCode="#[vars.httpStatus default 201]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <validation:is-true doc:name="Valid decision" message="decision must be APPROVED or REJECTED"
+                        expression="#[['APPROVED','REJECTED'] contains (payload.decision default '')]"/>
+    <db:insert config-ref="invoice-db-config" doc:name="Insert approval record">
+      <db:sql><![CDATA[INSERT INTO approval_records (invoice_id, approval_level, decision, decided_by, decided_by_role, comments)
+VALUES (:invoiceId, :approvalLevel, :decision, :decidedBy, :decidedByRole, :comments)]]></db:sql>
+      <db:input-parameters><![CDATA[#[{
+  invoiceId: attributes.uriParams.invoiceId,
+  approvalLevel: payload.approvalLevel,
+  decision: payload.decision,
+  decidedBy: payload.decidedBy,
+  decidedByRole: payload.decidedByRole,
+  comments: payload.comments
+}]]]></db:input-parameters>
+    </db:insert>
+    <set-payload value='#[output application/json --- { recorded: true }]' mimeType="application/json" doc:name="Response"/>
+  </flow>
+
+</mule>

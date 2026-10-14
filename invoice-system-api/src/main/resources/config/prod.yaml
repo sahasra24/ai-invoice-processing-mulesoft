@@ -1,0 +1,41 @@
+# =====================================================================
+# invoice-system-api - PROD / CloudHub configuration
+# Secrets are referenced from config/secure-prod.yaml (encrypted with the
+# Secure Properties Tool, decrypted at runtime with -Dmule.key=...).
+# Hosts are expected as deployment properties / env vars.
+# =====================================================================
+DB_HOST: "set-as-deployment-property"
+DB_PORT: "3306"
+DB_NAME: "invoice_db"
+DB_USER: "${secure::db.user}"
+DB_PASSWORD: "${secure::db.password}"
+INTERNAL_CLIENT_ID: "${secure::internal.clientId}"
+INTERNAL_CLIENT_SECRET: "${secure::internal.clientSecret}"
+ERP_HOST: "set-as-deployment-property"
+ERP_PORT: "443"
+ERP_PROTOCOL: "HTTPS"
+ERP_USERNAME: "${secure::erp.username}"
+ERP_PASSWORD: "${secure::erp.password}"
+DOCUMENT_STORAGE_DIR: "/opt/mule/invoice-documents"
+
+http:
+  host: "0.0.0.0"
+  port: "8081"          # CloudHub 2.0 exposes 8081 behind the ingress (HTTPS terminated at the load balancer)
+
+db:
+  maxPoolSize: "20"
+  minPoolSize: "2"
+  queryTimeoutSec: "15"
+  reconnectFrequencyMs: "5000"
+  reconnectAttempts: "10"
+
+erp:
+  basePath: "/erp/v1"
+  timeoutMs: "15000"
+  retry:
+    maxRetries: "2"
+    intervalMs: "2000"
+
+query:
+  maxPageSize: "100"
+  duplicateDateWindowDays: "7"

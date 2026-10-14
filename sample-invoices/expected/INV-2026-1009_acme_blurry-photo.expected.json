@@ -1,0 +1,153 @@
+{
+  "sampleFile": "images/INV-2026-1009_acme_blurry-photo.jpg",
+  "rawExtraction": {
+    "provider": "MOCK_DOCUMENT_AI",
+    "model": "mock-invoice-extractor-v1",
+    "warnings": [
+      "IMAGE_QUALITY_LOW: blur and skew detected"
+    ],
+    "extraction": {
+      "invoice_number": "INV-2026-1009",
+      "invoice_date": "2026-10-06",
+      "vendor_name": "Acme Office Supplies",
+      "vendor_id": "V-1001",
+      "purchase_order_number": "PO-2026-0008",
+      "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+      "currency": "USD",
+      "line_items": [
+        {
+          "line_number": 1,
+          "item_code": "NTB-A5-DOT",
+          "description": "A5 Dotted Notebook",
+          "quantity": "50",
+          "unit_price": "3.00",
+          "amount": "150.00"
+        }
+      ],
+      "subtotal": "150.00",
+      "tax_rate": 0.08,
+      "tax": "12.00",
+      "total_amount": "162.00",
+      "payment_terms": "Net 30",
+      "due_date": "2026-11-05",
+      "field_confidence": {
+        "invoice_number": 0.66,
+        "invoice_date": 0.64,
+        "vendor_name": 0.97,
+        "vendor_id": 0.97,
+        "purchase_order_number": 0.98,
+        "billing_address": 0.98,
+        "currency": 0.95,
+        "subtotal": 0.65,
+        "tax": 0.62,
+        "total_amount": 0.63,
+        "payment_terms": 0.99,
+        "due_date": 0.96,
+        "line_items": 0.62
+      },
+      "overall_confidence": 0.704
+    }
+  },
+  "canonicalInvoice": {
+    "invoiceNumber": "INV-2026-1009",
+    "normalizedInvoiceNumber": "INV20261009",
+    "invoiceDate": "2026-10-06",
+    "dueDate": "2026-11-05",
+    "dueDateDerived": false,
+    "vendor": {
+      "id": "V-1001",
+      "name": "Acme Office Supplies"
+    },
+    "poNumber": "PO-2026-0008",
+    "billingAddress": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+    "currency": "USD",
+    "paymentTerms": "Net 30",
+    "lineItems": [
+      {
+        "lineNumber": 1,
+        "itemCode": "NTB-A5-DOT",
+        "description": "A5 Dotted Notebook",
+        "quantity": 50,
+        "unitPrice": 3,
+        "amount": 150,
+        "amountDerived": false
+      }
+    ],
+    "subtotal": 150,
+    "tax": 12,
+    "taxRate": 0.08,
+    "total": 162,
+    "extraction": {
+      "provider": "MOCK_DOCUMENT_AI",
+      "model": "mock-invoice-extractor-v1",
+      "overallConfidence": 0.704,
+      "fieldConfidence": {
+        "invoiceNumber": 0.66,
+        "invoiceDate": 0.64,
+        "vendorName": 0.97,
+        "vendorId": 0.97,
+        "poNumber": 0.98,
+        "billingAddress": 0.98,
+        "currency": 0.95,
+        "lineItems": 0.62,
+        "subtotal": 0.65,
+        "tax": 0.62,
+        "total": 0.63,
+        "paymentTerms": 0.99,
+        "dueDate": 0.96
+      },
+      "warnings": [
+        "IMAGE_QUALITY_LOW: blur and skew detected"
+      ]
+    }
+  },
+  "routingDecision": {
+    "status": "MANUAL_REVIEW",
+    "autoApproved": false,
+    "approvalChain": [
+      "MANAGER"
+    ],
+    "approvalsRequired": 1,
+    "nextApprovalLevel": "MANAGER",
+    "duplicateOf": null,
+    "decisionReason": "Requires review: LOW_CONFIDENCE, LOW_CONFIDENCE_FIELDS",
+    "validationErrors": [],
+    "exceptions": [
+      {
+        "code": "EXTRACTION_WARNING",
+        "severity": "INFO",
+        "message": "IMAGE_QUALITY_LOW: blur and skew detected"
+      },
+      {
+        "code": "LOW_CONFIDENCE",
+        "severity": "REVIEW",
+        "message": "Overall extraction confidence 0.704 is below the 0.85 threshold"
+      },
+      {
+        "code": "LOW_CONFIDENCE_FIELDS",
+        "severity": "REVIEW",
+        "message": "Low-confidence fields: invoiceNumber, invoiceDate, lineItems, subtotal, tax, total",
+        "details": {
+          "fields": [
+            "invoiceNumber",
+            "invoiceDate",
+            "lineItems",
+            "subtotal",
+            "tax",
+            "total"
+          ]
+        }
+      }
+    ],
+    "checks": {
+      "schemaValid": true,
+      "fieldsValid": true,
+      "vendorVerified": true,
+      "duplicateChecked": true,
+      "poMatched": true,
+      "totalsValid": true,
+      "taxValid": true,
+      "extractionConfidence": 0.704
+    }
+  }
+}

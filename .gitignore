@@ -1,0 +1,25 @@
+# Build output
+target/
+.mule/
+
+# IDE
+.settings/
+.project
+.classpath
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Secrets - never commit
+config/.env
+*.p12
+*.jks
+
+# Python
+__pycache__/
+*.pyc
+
+# Local runtime data
+invoice-data/
+logs/

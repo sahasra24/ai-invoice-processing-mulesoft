@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+
+  <!-- =====================================================================
+       GET /sys/v1/vendors/{vendorId}
+       ===================================================================== -->
+  <flow name="sys-get-vendor-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/vendors/{vendorId}" allowedMethods="GET" doc:name="GET /vendors/{vendorId}">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <validation:matches-regex doc:name="Vendor ID format" value="#[attributes.uriParams.vendorId]" regex="^V-[0-9]{4}$"
+                              message="vendorId must match V-9999"/>
+    <db:select config-ref="invoice-db-config" doc:name="Select vendor">
+      <db:sql><![CDATA[SELECT vendor_id, vendor_name, tax_id, email, phone, address_line1, city, state, postal_code,
+       country, currency, default_tax_rate, payment_terms, status
+FROM vendors WHERE vendor_id = :vendorId]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ vendorId: attributes.uriParams.vendorId }]]]></db:input-parameters>
+    </db:select>
+    <choice doc:name="Found?">
+      <when expression="#[isEmpty(payload)]">
+        <set-variable variableName="errorOverride" doc:name="404 override"
+                      value="#[{ httpStatus: 404, code: 'VENDOR_NOT_FOUND', message: 'Vendor ' ++ attributes.uriParams.vendorId ++ ' not found' }]"/>
+        <raise-error type="APP:NOT_FOUND" description="Vendor not found" doc:name="Raise APP:NOT_FOUND"/>
+      </when>
+    </choice>
+    <ee:transform doc:name="Vendor view">
+      <ee:message>
+        <ee:set-payload resource="dwl/vendor-view.dwl"/>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+  <!-- =====================================================================
+       GET /sys/v1/vendors?name=   (case-insensitive exact name match;
+       used when the AI extracted a vendor name but no vendor ID)
+       ===================================================================== -->
+  <flow name="sys-search-vendors-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/vendors" allowedMethods="GET" doc:name="GET /vendors?name=">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <validation:is-true doc:name="name required" expression="#[sizeOf(trim(attributes.queryParams.name default '')) &gt;= 2]"
+                        message="Query parameter 'name' (min 2 chars) is required"/>
+    <db:select config-ref="invoice-db-config" doc:name="Search vendors by name">
+      <db:sql><![CDATA[SELECT vendor_id, vendor_name, tax_id, email, phone, address_line1, city, state, postal_code,
+       country, currency, default_tax_rate, payment_terms, status
+FROM vendors
+WHERE LOWER(vendor_name) = LOWER(TRIM(:name))
+ORDER BY vendor_id
+LIMIT 10]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ name: attributes.queryParams.name }]]]></db:input-parameters>
+    </db:select>
+    <ee:transform doc:name="Vendor list">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  vendors: payload map ((v) -> {
+    vendorId: v.vendor_id, vendorName: v.vendor_name, status: v.status, currency: v.currency,
+    defaultTaxRate: v.default_tax_rate, paymentTerms: v.payment_terms
+  })
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+  <!-- =====================================================================
+       GET /sys/v1/purchase-orders/{poNumber}   (simulated ERP purchase order)
+       ===================================================================== -->
+  <flow name="sys-get-purchase-order-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/purchase-orders/{poNumber}" allowedMethods="GET" doc:name="GET /purchase-orders/{poNumber}">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <validation:matches-regex doc:name="PO number format" value="#[attributes.uriParams.poNumber]" regex="^[A-Za-z0-9\-]{3,30}$"
+                              message="poNumber may contain letters, digits and '-' (3-30 chars)"/>
+    <db:select config-ref="invoice-db-config" doc:name="Select PO header" target="poRows">
+      <db:sql><![CDATA[SELECT po_number, vendor_id, DATE_FORMAT(po_date, '%Y-%m-%d') AS po_date, currency,
+       subtotal_amount, tax_amount, total_amount, invoiced_amount, status, buyer_email
+FROM purchase_orders WHERE po_number = :poNumber]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ poNumber: upper(attributes.uriParams.poNumber) }]]]></db:input-parameters>
+    </db:select>
+    <choice doc:name="Found?">
+      <when expression="#[isEmpty(vars.poRows)]">
+        <set-variable variableName="errorOverride" doc:name="404 override"
+                      value="#[{ httpStatus: 404, code: 'PO_NOT_FOUND', message: 'Purchase order ' ++ attributes.uriParams.poNumber ++ ' not found' }]"/>
+        <raise-error type="APP:NOT_FOUND" description="Purchase order not found" doc:name="Raise APP:NOT_FOUND"/>
+      </when>
+    </choice>
+    <db:select config-ref="invoice-db-config" doc:name="Select PO lines" target="poLines">
+      <db:sql><![CDATA[SELECT line_number, item_code, description, quantity, unit_price, line_amount, quantity_invoiced
+FROM purchase_order_lines WHERE po_number = :poNumber ORDER BY line_number]]></db:sql>
+      <db:input-parameters><![CDATA[#[{ poNumber: upper(attributes.uriParams.poNumber) }]]]></db:input-parameters>
+    </db:select>
+    <ee:transform doc:name="PO view">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var po = vars.poRows[0]
+---
+{
+  poNumber: po.po_number,
+  vendorId: po.vendor_id,
+  poDate: po.po_date,
+  currency: po.currency,
+  status: po.status,
+  subtotalAmount: po.subtotal_amount,
+  taxAmount: po.tax_amount,
+  totalAmount: po.total_amount,
+  invoicedAmount: po.invoiced_amount,
+  remainingAmount: po.total_amount - po.invoiced_amount,
+  buyerEmail: po.buyer_email,
+  lines: vars.poLines map ((l) -> {
+    lineNumber: l.line_number,
+    itemCode: l.item_code,
+    description: l.description,
+    quantity: l.quantity,
+    unitPrice: l.unit_price,
+    lineAmount: l.line_amount,
+    quantityInvoiced: l.quantity_invoiced,
+    remainingQuantity: l.quantity - l.quantity_invoiced
+  })
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </flow>
+
+  <!-- =====================================================================
+       GET /sys/v1/health   (liveness + database readiness)
+       ===================================================================== -->
+  <flow name="sys-health-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/health" allowedMethods="GET" doc:name="GET /health">
+      <http:response statusCode="#[vars.httpStatus default 200]"/>
+      <http:error-response statusCode="#[vars.httpStatus default 503]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+      </http:error-response>
+    </http:listener>
+    <db:select config-ref="invoice-db-config" doc:name="Ping database" queryTimeout="3" queryTimeoutUnit="SECONDS">
+      <db:sql><![CDATA[SELECT 1 AS ok]]></db:sql>
+    </db:select>
+    <set-payload value='#[output application/json --- { status: "UP", service: "invoice-system-api", database: "UP", timestamp: now() >> "UTC" }]'
+                 mimeType="application/json" doc:name="Health response"/>
+  </flow>
+
+</mule>

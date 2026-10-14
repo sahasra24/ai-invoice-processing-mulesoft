@@ -1,0 +1,33 @@
+{
+  "invoice_number": "inv/2026/1001",
+  "invoice_date": "2026-09-15",
+  "vendor_name": "Acme Office Supplies",
+  "vendor_id": "V-1001",
+  "purchase_order_number": "PO-2026-0001",
+  "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "item_code": "PAP-A4-500",
+      "description": "A4 Copy Paper 80gsm (box of 5 reams)",
+      "quantity": 100,
+      "unit_price": 5.0,
+      "amount": 500.0
+    },
+    {
+      "line_number": 2,
+      "item_code": "TON-HP-26X",
+      "description": "HP 26X Black Toner Cartridge",
+      "quantity": 10,
+      "unit_price": 30.0,
+      "amount": 300.0
+    }
+  ],
+  "subtotal": 800.0,
+  "tax_rate": 0.08,
+  "tax": 64.0,
+  "total_amount": 864.0,
+  "payment_terms": "Net 30",
+  "due_date": "2026-10-15"
+}

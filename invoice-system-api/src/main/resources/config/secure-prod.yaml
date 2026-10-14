@@ -1,0 +1,14 @@
+# Encrypt each value with the MuleSoft Secure Properties Tool, e.g.
+#   java -cp secure-properties-tool.jar com.mulesoft.tools.SecurePropertiesTool \
+#        string encrypt AES CBC <your-16/24/32-char-key> "<plain value>"
+# and paste the output as ![<encrypted>]. Supply the key at runtime: -Dmule.key=<key>
+# (CloudHub: Runtime Manager > Properties, marked as secure via mule-artifact.json).
+db:
+  user: "![REPLACE_WITH_ENCRYPTED_VALUE]"
+  password: "![REPLACE_WITH_ENCRYPTED_VALUE]"
+internal:
+  clientId: "![REPLACE_WITH_ENCRYPTED_VALUE]"
+  clientSecret: "![REPLACE_WITH_ENCRYPTED_VALUE]"
+erp:
+  username: "![REPLACE_WITH_ENCRYPTED_VALUE]"
+  password: "![REPLACE_WITH_ENCRYPTED_VALUE]"

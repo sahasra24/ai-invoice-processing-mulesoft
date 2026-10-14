@@ -1,0 +1,98 @@
+[
+  {
+    "file": "pdf/INV-2026-1001_acme_auto-approve.pdf",
+    "invoiceNumber": "INV-2026-1001",
+    "scenario": "Happy path: total <= 1,000 -> auto-approved -> posted to ERP",
+    "total": 864.0
+  },
+  {
+    "file": "pdf/INV-2026-1002_globex_single-approval.pdf",
+    "invoiceNumber": "INV-2026-1002",
+    "scenario": "1,000 < total <= 10,000 -> PENDING_APPROVAL (APPROVER)",
+    "total": 5400.0
+  },
+  {
+    "file": "pdf/INV-2026-1003_initech_two-level-approval.pdf",
+    "invoiceNumber": "INV-2026-1003",
+    "scenario": "total > 50,000 -> PENDING_APPROVAL (MANAGER then FINANCE_DIRECTOR)",
+    "total": 64800.0
+  },
+  {
+    "file": "pdf/INV-2026-1004_globex_price-variance.pdf",
+    "invoiceNumber": "INV-2026-1004",
+    "scenario": "Unit price 13.50 vs PO 12.00 (12.5% variance) -> MANUAL_REVIEW",
+    "total": 1458.0
+  },
+  {
+    "file": "pdf/INV-2026-1005_unknown-vendor.pdf",
+    "invoiceNumber": "INV-2026-1005",
+    "scenario": "Vendor V-9999 not in vendor master -> VALIDATION_FAILED",
+    "total": 32.4
+  },
+  {
+    "file": "pdf/INV-2026-1006_acme_incorrect-totals.pdf",
+    "invoiceNumber": "INV-2026-1006",
+    "scenario": "Line items sum to 300.00 but subtotal says 350.00 -> MANUAL_REVIEW",
+    "total": 378.0
+  },
+  {
+    "file": "pdf/INV-2026-1007_acme_missing-fields.pdf",
+    "invoiceNumber": "INV-2026-1007",
+    "scenario": "No invoice number and no total -> VALIDATION_FAILED",
+    "total": null
+  },
+  {
+    "file": "pdf/ERPFAIL-2026-0001_acme_erp-failure.pdf",
+    "invoiceNumber": "ERPFAIL-2026-0001",
+    "scenario": "Auto-approved, ERP returns 503 -> ERP_POSTING_FAILED -> recovery queue",
+    "total": 108.0
+  },
+  {
+    "file": "pdf/ai-fail_scan_INV-2026-1011.pdf",
+    "invoiceNumber": "INV-2026-1011",
+    "scenario": "Mock AI returns HTTP 500 -> EXTRACTION_FAILED -> recovery queue -> DEAD",
+    "total": 16.2
+  },
+  {
+    "file": "images/INV-2026-1008_acme_scan.png",
+    "invoiceNumber": "INV-2026-1008",
+    "scenario": "Clean scan (PNG) -> auto-approved -> posted to ERP",
+    "total": 486.0
+  },
+  {
+    "file": "images/INV-2026-1009_acme_blurry-photo.jpg",
+    "invoiceNumber": "INV-2026-1009",
+    "scenario": "Blurry phone photo (JPG) -> low confidence -> MANUAL_REVIEW",
+    "total": 162.0
+  },
+  {
+    "file": "json/INV-2026-1010_stark_structured.json",
+    "invoiceNumber": "INV-2026-1010",
+    "scenario": "Structured JSON, 10% tax vendor -> PENDING_APPROVAL (APPROVER)",
+    "total": 2750.0
+  },
+  {
+    "file": "json/duplicate-of-INV-2026-1001.json",
+    "invoiceNumber": "inv/2026/1001",
+    "scenario": "Same vendor + normalized number as INV-2026-1001 -> DUPLICATE (409)",
+    "total": 864.0
+  },
+  {
+    "file": "images/unreadable-receipt.png",
+    "invoiceNumber": null,
+    "scenario": "Unrecognised image -> very low confidence -> MANUAL_REVIEW",
+    "total": null
+  },
+  {
+    "file": "invalid/not-an-invoice.txt",
+    "invoiceNumber": null,
+    "scenario": "Unsupported extension -> 415",
+    "total": null
+  },
+  {
+    "file": "invalid/renamed-text-file.pdf",
+    "invoiceNumber": null,
+    "scenario": "Extension says PDF but magic bytes do not -> 415",
+    "total": null
+  }
+]

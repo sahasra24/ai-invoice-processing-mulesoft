@@ -1,0 +1,43 @@
+# Local infrastructure for the demo: MySQL 8.4 (schema + sample data) and the
+# mock AI / ERP services. The three Mule apps run in Anypoint Studio (or a
+# standalone Mule runtime) on the host and connect to localhost:3306 / :8090.
+#
+#   docker compose up -d          # start
+#   docker compose down -v        # stop and wipe the database
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: invoice-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_local_only}
+      TZ: UTC
+    command: ["--default-time-zone=+00:00"]
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./database/01-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./database/02-sample-data.sql:/docker-entrypoint-initdb.d/02-sample-data.sql:ro
+      - invoice-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      retries: 10
+
+  mock-services:
+    image: python:3.12-slim
+    container_name: invoice-mock-services
+    working_dir: /app
+    command: ["python", "mock_server.py"]
+    environment:
+      MOCK_PORT: "8090"
+      MOCK_AI_API_KEY: ${MOCK_AI_API_KEY:-mock-ai-key-local}
+      ERP_USERNAME: ${ERP_USERNAME:-erp_integration}
+      ERP_PASSWORD: ${ERP_PASSWORD:-erp-local-pass}
+      ERP_FAIL_ATTEMPTS: "3"
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./mock-services:/app:ro
+
+volumes:
+  invoice-mysql-data:

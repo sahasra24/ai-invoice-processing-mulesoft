@@ -1,0 +1,73 @@
+# =====================================================================
+# invoice-process-api - PROD / CloudHub configuration
+# UPPER_SNAKE_CASE keys = secrets / environment specific. An environment
+# variable or -D system property with the same name overrides the value.
+# =====================================================================
+
+# ---- secrets / environment specific --------------------------------
+PROCESS_API_CLIENT_ID: "${secure::process.clientId}"
+PROCESS_API_CLIENT_SECRET: "${secure::process.clientSecret}"
+INTERNAL_CLIENT_ID: "${secure::internal.clientId}"
+INTERNAL_CLIENT_SECRET: "${secure::internal.clientSecret}"
+SYS_API_HOST: "set-as-deployment-property"
+SYS_API_PORT: "443"
+SYS_API_PROTOCOL: "HTTPS"
+AI_PROVIDER: "claude"
+MOCK_AI_HOST: "localhost"
+MOCK_AI_PORT: "8090"
+MOCK_AI_API_KEY: "${secure::mockai.apiKey}"
+ANTHROPIC_API_KEY: "${secure::anthropic.apiKey}"
+ANTHROPIC_MODEL: "claude-opus-5-5"
+FILE_INBOUND_DIR: "/opt/mule/invoice-inbound"
+FILE_ARCHIVE_DIR: "/opt/mule/invoice-archive"
+
+# ---- application settings -----------------------------------------
+http:
+  host: "0.0.0.0"
+  port: "8081"
+
+sys:
+  api:
+    basePath: "/sys/v1"
+    timeoutMs: "15000"
+
+ai:
+  timeoutMs: "30000"
+  retry:
+    maxRetries: "2"          # until-successful: 1 call + 2 retries
+    intervalMs: "2000"
+  anthropic:
+    host: "api.anthropic.com"
+    maxTokens: "16000"
+    effort: "medium"
+    timeoutMs: "180000"
+
+validation:
+  confidenceThreshold: "0.85"       # fields/overall below this -> MANUAL_REVIEW
+  minUsableConfidence: "0.50"       # below this, blocking errors are blamed on extraction -> MANUAL_REVIEW
+  maxInvoiceAgeDays: "730"
+  allowedCurrencies: "USD,EUR,GBP,CAD,INR"
+  amountTolerance: "0.01"
+  taxTolerance: "0.02"
+  priceTolerancePct: "2"
+
+approval:
+  autoApproveLimit: "1000"          # <= : touchless, posted to ERP
+  approverLimit: "10000"            # <= : APPROVER
+  managerLimit: "50000"             # <= : MANAGER ; above: MANAGER -> FINANCE_DIRECTOR
+  lockTtlSeconds: "60"
+
+recovery:
+  flowState: "started"     # started | stopped
+  pollFrequencyMs: "60000"
+  startDelayMs: "30000"
+  batchSize: "10"
+  maxAttempts: "5"
+  baseDelaySec: "60"
+  maxDelaySec: "3600"
+
+file:
+  flowState: "stopped"     # started | stopped           # no shared file system on CloudHub - use SFTP/S3 in production
+  pollFrequencyMs: "10000"
+  maxFileSizeBytes: "10485760"
+  dropUser: "file-drop"

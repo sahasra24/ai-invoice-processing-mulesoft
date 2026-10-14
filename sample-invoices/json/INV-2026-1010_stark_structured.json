@@ -1,0 +1,25 @@
+{
+  "invoice_number": "INV-2026-1010",
+  "invoice_date": "2026-10-07",
+  "vendor_name": "Stark Precision Components",
+  "vendor_id": "V-1005",
+  "purchase_order_number": "PO-2026-0007",
+  "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "item_code": "CNC-SHAFT-8",
+      "description": "CNC Machined Shaft 8mm",
+      "quantity": 25,
+      "unit_price": 100.0,
+      "amount": 2500.0
+    }
+  ],
+  "subtotal": 2500.0,
+  "tax_rate": 0.1,
+  "tax": 250.0,
+  "total_amount": 2750.0,
+  "payment_terms": "Net 30",
+  "due_date": "2026-11-06"
+}

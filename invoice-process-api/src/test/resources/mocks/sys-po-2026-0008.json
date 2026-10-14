@@ -1,0 +1,23 @@
+{
+  "poNumber": "PO-2026-0008",
+  "vendorId": "V-1001",
+  "status": "OPEN",
+  "currency": "USD",
+  "subtotalAmount": 300,
+  "taxAmount": 24,
+  "totalAmount": 324,
+  "invoicedAmount": 0,
+  "remainingAmount": 324,
+  "lines": [
+    {
+      "lineNumber": 1,
+      "itemCode": "NTB-A5-DOT",
+      "description": "A5 Dotted Notebook",
+      "quantity": 100,
+      "unitPrice": 3,
+      "lineAmount": 300,
+      "quantityInvoiced": 0,
+      "remainingQuantity": 100
+    }
+  ]
+}

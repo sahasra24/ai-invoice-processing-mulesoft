@@ -1,0 +1,18 @@
+{
+  "invoiceId": "7d3e8f00-0000-4000-8000-000000001003",
+  "invoiceNumber": "INV-2026-1003",
+  "vendorId": "V-1003",
+  "poNumber": "PO-2026-0003",
+  "currency": "USD",
+  "totalAmount": 64800.0,
+  "status": "PENDING_APPROVAL",
+  "approvalChain": "MANAGER,FINANCE_DIRECTOR",
+  "approvalsRequired": 2,
+  "approvalsReceived": 0,
+  "submittedBy": "supplier1",
+  "version": 3,
+  "approvals": [],
+  "lineItems": [],
+  "validationErrors": [],
+  "exceptions": []
+}

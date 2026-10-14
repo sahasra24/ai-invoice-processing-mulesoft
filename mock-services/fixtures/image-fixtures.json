@@ -1,0 +1,126 @@
+{
+  "bySha256": {
+    "c3639116ee32169ba8dfa08efbb77dd2d5a0b7f423f15fc44cdcb8048d74e2a7": {
+      "fields": {
+        "invoice_number": "INV-2026-1008",
+        "invoice_date": "2026-10-05",
+        "vendor_name": "Acme Office Supplies",
+        "vendor_id": "V-1001",
+        "purchase_order_number": "PO-2026-0006",
+        "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+        "currency": "USD",
+        "line_items": [
+          {
+            "line_number": 1,
+            "item_code": "LMP-LED-DK",
+            "description": "LED Desk Lamp",
+            "quantity": "10",
+            "unit_price": "45.00",
+            "amount": "450.00"
+          }
+        ],
+        "subtotal": "450.00",
+        "tax_rate": 0.08,
+        "tax": "36.00",
+        "total_amount": "486.00",
+        "payment_terms": "Net 30",
+        "due_date": "2026-11-04"
+      },
+      "degraded": false,
+      "warnings": []
+    },
+    "4b5873dd4e04ae4de5b9dbee8ee909a91a227e0b4c42a7d24f36b79958a5643c": {
+      "fields": {
+        "invoice_number": "INV-2026-1009",
+        "invoice_date": "2026-10-06",
+        "vendor_name": "Acme Office Supplies",
+        "vendor_id": "V-1001",
+        "purchase_order_number": "PO-2026-0008",
+        "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+        "currency": "USD",
+        "line_items": [
+          {
+            "line_number": 1,
+            "item_code": "NTB-A5-DOT",
+            "description": "A5 Dotted Notebook",
+            "quantity": "50",
+            "unit_price": "3.00",
+            "amount": "150.00"
+          }
+        ],
+        "subtotal": "150.00",
+        "tax_rate": 0.08,
+        "tax": "12.00",
+        "total_amount": "162.00",
+        "payment_terms": "Net 30",
+        "due_date": "2026-11-05"
+      },
+      "degraded": true,
+      "warnings": [
+        "IMAGE_QUALITY_LOW: blur and skew detected"
+      ]
+    }
+  },
+  "byFileName": {
+    "INV-2026-1008_acme_scan.png": {
+      "fields": {
+        "invoice_number": "INV-2026-1008",
+        "invoice_date": "2026-10-05",
+        "vendor_name": "Acme Office Supplies",
+        "vendor_id": "V-1001",
+        "purchase_order_number": "PO-2026-0006",
+        "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+        "currency": "USD",
+        "line_items": [
+          {
+            "line_number": 1,
+            "item_code": "LMP-LED-DK",
+            "description": "LED Desk Lamp",
+            "quantity": "10",
+            "unit_price": "45.00",
+            "amount": "450.00"
+          }
+        ],
+        "subtotal": "450.00",
+        "tax_rate": 0.08,
+        "tax": "36.00",
+        "total_amount": "486.00",
+        "payment_terms": "Net 30",
+        "due_date": "2026-11-04"
+      },
+      "degraded": false,
+      "warnings": []
+    },
+    "INV-2026-1009_acme_blurry-photo.jpg": {
+      "fields": {
+        "invoice_number": "INV-2026-1009",
+        "invoice_date": "2026-10-06",
+        "vendor_name": "Acme Office Supplies",
+        "vendor_id": "V-1001",
+        "purchase_order_number": "PO-2026-0008",
+        "billing_address": "Contoso Ltd, Accounts Payable, 1 Microsoft Way, Redmond WA 98052",
+        "currency": "USD",
+        "line_items": [
+          {
+            "line_number": 1,
+            "item_code": "NTB-A5-DOT",
+            "description": "A5 Dotted Notebook",
+            "quantity": "50",
+            "unit_price": "3.00",
+            "amount": "150.00"
+          }
+        ],
+        "subtotal": "150.00",
+        "tax_rate": 0.08,
+        "tax": "12.00",
+        "total_amount": "162.00",
+        "payment_terms": "Net 30",
+        "due_date": "2026-11-05"
+      },
+      "degraded": true,
+      "warnings": [
+        "IMAGE_QUALITY_LOW: blur and skew detected"
+      ]
+    }
+  }
+}

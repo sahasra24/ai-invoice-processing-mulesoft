@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "id": "urn:example:invoice:canonical:v1",
+  "title": "Canonical invoice (output of normalize-ai-response.dwl)",
+  "description": "Structural contract enforced with <json:validate-schema> before business validation. Business rules (required-for-posting fields, totals, PO matching) are enforced in DataWeave so that all problems are reported together instead of failing on the first one.",
+  "type": "object",
+  "required": ["invoiceNumber", "invoiceDate", "vendor", "currency", "lineItems", "subtotal", "tax", "total", "extraction"],
+  "additionalProperties": false,
+  "properties": {
+    "invoiceNumber": { "type": ["string", "null"], "maxLength": 50 },
+    "normalizedInvoiceNumber": { "type": ["string", "null"], "pattern": "^[A-Z0-9]*$", "maxLength": 50 },
+    "invoiceDate": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "dueDate": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "dueDateDerived": { "type": "boolean" },
+    "vendor": {
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": ["string", "null"], "maxLength": 20 },
+        "name": { "type": ["string", "null"], "maxLength": 150 }
+      }
+    },
+    "poNumber": { "type": ["string", "null"], "maxLength": 30 },
+    "billingAddress": { "type": ["string", "null"], "maxLength": 500 },
+    "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+    "paymentTerms": { "type": ["string", "null"], "maxLength": 30 },
+    "lineItems": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "required": ["lineNumber", "quantity", "unitPrice", "amount"],
+        "additionalProperties": false,
+        "properties": {
+          "lineNumber": { "type": "integer", "minimum": 1 },
+          "itemCode": { "type": ["string", "null"], "maxLength": 40 },
+          "description": { "type": ["string", "null"], "maxLength": 255 },
+          "quantity": { "type": ["number", "null"] },
+          "unitPrice": { "type": ["number", "null"] },
+          "amount": { "type": ["number", "null"] },
+          "amountDerived": { "type": "boolean" }
+        }
+      }
+    },
+    "subtotal": { "type": ["number", "null"] },
+    "tax": { "type": ["number", "null"] },
+    "taxRate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "total": { "type": ["number", "null"] },
+    "extraction": {
+      "type": "object",
+      "required": ["provider", "overallConfidence", "fieldConfidence"],
+      "properties": {
+        "provider": { "type": "string" },
+        "model": { "type": ["string", "null"] },
+        "overallConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "fieldConfidence": {
+          "type": "object",
+          "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

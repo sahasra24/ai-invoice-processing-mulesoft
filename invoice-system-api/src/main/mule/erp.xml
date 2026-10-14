@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+
+  <!-- =====================================================================
+       POST /sys/v1/erp/invoices   { "invoiceId": "..." }
+       Posts an APPROVED invoice to the (simulated) ERP as XML.
+       Reliability:
+         * idempotent - an invoice that already has an ERP document number
+           is never posted twice (and the ERP itself dedupes on ExternalReference)
+         * until-successful retries transient 5xx / connectivity failures;
+           4xx (business rejection) is NOT retried
+         * PO consumption + ERP document number are written atomically
+       ===================================================================== -->
+  <flow name="sys-post-invoice-to-erp-flow">
+    <http:listener config-ref="sys-api-listener-config" path="/sys/v1/erp/invoices" allowedMethods="POST" doc:name="POST /erp/invoices">
+      <http:response statusCode="#[vars.httpStatus default 200]">
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.httpStatus default 500]">
+        <http:body><![CDATA[#[payload]]]></http:body>
+        <http:headers><![CDATA[#[{'X-Correlation-ID': correlationId}]]]></http:headers>
+      </http:error-response>
+    </http:listener>
+    <flow-ref name="sys-client-auth-sub-flow" doc:name="Authenticate client"/>
+    <validation:is-not-blank-string doc:name="invoiceId required" value="#[payload.invoiceId]" message="invoiceId is required"/>
+    <set-variable variableName="invoiceId" value="#[payload.invoiceId]" doc:name="invoiceId"/>
+    <flow-ref name="sys-load-invoice-sub-flow" doc:name="Load invoice"/>
+    <set-variable variableName="invoice" value="#[payload]" doc:name="Keep invoice"/>
+
+    <choice doc:name="Already posted?">
+      <when expression="#[vars.invoice.erpDocumentNumber != null]">
+        <logger level="INFO" doc:name="Log already posted" category="invoice.system.erp"
+                message="#[output application/json indent=false --- { event: 'erp.post.skipped', reason: 'ALREADY_POSTED', invoiceId: vars.invoiceId }]"/>
+        <set-payload doc:name="Already posted response" mimeType="application/json"
+                     value="#[output application/json --- { invoiceId: vars.invoiceId, erpStatus: 'ALREADY_POSTED', erpDocumentNumber: vars.invoice.erpDocumentNumber, postedAt: vars.invoice.erpPostedAt }]"/>
+      </when>
+      <when expression="#[not (['APPROVED', 'ERP_POSTING_FAILED'] contains vars.invoice.status)]">
+        <set-variable variableName="errorOverride" doc:name="409 override"
+                      value="#[{ httpStatus: 409, code: 'INVALID_INVOICE_STATE', message: 'Only APPROVED invoices can be posted; invoice is ' ++ vars.invoice.status }]"/>
+        <raise-error type="APP:INVALID_STATE" description="Invoice not approved" doc:name="Raise APP:INVALID_STATE"/>
+      </when>
+      <otherwise>
+        <ee:transform doc:name="Transform to ERP XML">
+          <ee:message>
+            <ee:set-payload resource="dwl/erp-payload.dwl"/>
+          </ee:message>
+        </ee:transform>
+        <try doc:name="Call ERP with retry">
+          <until-successful maxRetries="${erp.retry.maxRetries}" millisBetweenRetries="${erp.retry.intervalMs}" doc:name="Retry transient failures">
+            <http:request method="POST" config-ref="erp-request-config" path="/ap-invoices" doc:name="ERP - post AP invoice">
+              <http:headers><![CDATA[#[{ 'Content-Type': 'application/xml', 'Accept': 'application/xml', 'X-Correlation-ID': correlationId }]]]></http:headers>
+              <http:response-validator>
+                <http:success-status-code-validator values="200..299,400..499"/>
+              </http:response-validator>
+            </http:request>
+          </until-successful>
+          <error-handler>
+            <on-error-propagate type="ANY" doc:name="ERP unavailable" logException="false">
+              <logger level="ERROR" doc:name="Log ERP failure" category="invoice.system.erp"
+                      message="#[output application/json indent=false --- { event: 'erp.post.failed', invoiceId: vars.invoiceId, errorType: (error.errorType.namespace default '') ++ ':' ++ (error.errorType.identifier default '') }]"/>
+              <set-variable variableName="errorOverride" doc:name="502 override"
+                            value="#[{ httpStatus: 502, code: 'ERP_UNAVAILABLE', message: 'ERP did not accept the posting after retries; the request can be retried later' }]"/>
+            </on-error-propagate>
+          </error-handler>
+        </try>
+        <set-variable variableName="erpHttpStatus" value="#[attributes.statusCode]" doc:name="ERP HTTP status"/>
+        <ee:transform doc:name="Transform ERP response">
+          <ee:message>
+            <ee:set-payload resource="dwl/erp-response.dwl"/>
+          </ee:message>
+        </ee:transform>
+        <set-variable variableName="erpResult" value="#[payload]" doc:name="Keep ERP result"/>
+        <choice doc:name="ERP accepted?">
+          <when expression="#[not vars.erpResult.success]">
+            <set-variable variableName="errorOverride" doc:name="422 override"
+                          value="#[{ httpStatus: 422, code: 'ERP_REJECTED', message: 'ERP rejected the invoice: ' ++ (vars.erpResult.errorCode default '') ++ ' - ' ++ (vars.erpResult.errorMessage default '') }]"/>
+            <raise-error type="APP:ERP_REJECTED" description="ERP business rejection" doc:name="Raise APP:ERP_REJECTED"/>
+          </when>
+        </choice>
+
+        <try transactionalAction="ALWAYS_BEGIN" transactionType="LOCAL" doc:name="Record posting atomically">
+          <db:update config-ref="invoice-db-config" doc:name="Store ERP document number" target="docUpdate">
+            <db:sql><![CDATA[UPDATE invoices
+SET erp_document_number = :documentNumber, erp_posted_at = :postedAt, version = version + 1
+WHERE invoice_id = :invoiceId AND erp_document_number IS NULL]]></db:sql>
+            <db:input-parameters><![CDATA[#[{
+  invoiceId: vars.invoiceId,
+  documentNumber: vars.erpResult.erpDocumentNumber,
+  postedAt: ((vars.erpResult.postedAt as DateTime) >> "UTC") as String { format: "yyyy-MM-dd HH:mm:ss" }
+}]]]></db:input-parameters>
+          </db:update>
+          <choice doc:name="First posting?">
+            <when expression="#[vars.docUpdate.affectedRows == 1 and vars.invoice.poNumber != null]">
+              <!-- MySQL evaluates SET assignments left to right: status uses the updated invoiced_amount -->
+              <db:update config-ref="invoice-db-config" doc:name="Consume PO amount">
+                <db:sql><![CDATA[UPDATE purchase_orders
+SET invoiced_amount = invoiced_amount + :amount,
+    status = CASE WHEN invoiced_amount >= total_amount THEN 'FULLY_INVOICED' ELSE 'PARTIALLY_INVOICED' END
+WHERE po_number = :poNumber]]></db:sql>
+                <db:input-parameters><![CDATA[#[{ poNumber: vars.invoice.poNumber, amount: vars.invoice.totalAmount }]]]></db:input-parameters>
+              </db:update>
+              <foreach collection="#[vars.invoice.lineItems filter ((li) -> li.poLineNumber != null)]" doc:name="For each matched line">
+                <db:update config-ref="invoice-db-config" doc:name="Consume PO line quantity">
+                  <db:sql><![CDATA[UPDATE purchase_order_lines
+SET quantity_invoiced = quantity_invoiced + :quantity
+WHERE po_number = :poNumber AND line_number = :poLine]]></db:sql>
+                  <db:input-parameters><![CDATA[#[{ poNumber: vars.invoice.poNumber, poLine: payload.poLineNumber, quantity: payload.quantity }]]]></db:input-parameters>
+                </db:update>
+              </foreach>
+            </when>
+          </choice>
+          <db:insert config-ref="invoice-db-config" doc:name="Audit ERP posting">
+            <db:sql><![CDATA[INSERT INTO processing_audit_logs (invoice_id, correlation_id, step, outcome, message, actor, details)
+VALUES (:invoiceId, :correlationId, 'ERP_POSTING', 'SUCCESS', :message, 'system', :details)]]></db:sql>
+            <db:input-parameters><![CDATA[#[{
+  invoiceId: vars.invoiceId,
+  correlationId: correlationId,
+  message: 'Posted to ERP as document ' ++ (vars.erpResult.erpDocumentNumber default ''),
+  details: write({ erpStatus: vars.erpResult.erpStatus, fiscalYear: vars.erpResult.fiscalYear }, 'application/json', { indent: false })
+}]]]></db:input-parameters>
+          </db:insert>
+        </try>
+        <logger level="INFO" doc:name="Log posted" category="invoice.system.erp"
+                message="#[output application/json indent=false --- { event: 'erp.post.succeeded', invoiceId: vars.invoiceId, erpDocumentNumber: vars.erpResult.erpDocumentNumber }]"/>
+        <set-payload doc:name="Posted response" mimeType="application/json"
+                     value="#[output application/json --- { invoiceId: vars.invoiceId, erpStatus: vars.erpResult.erpStatus, erpDocumentNumber: vars.erpResult.erpDocumentNumber, fiscalYear: vars.erpResult.fiscalYear, postedAt: vars.erpResult.postedAt }]"/>
+      </otherwise>
+    </choice>
+  </flow>
+
+</mule>
