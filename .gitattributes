@@ -9,3 +9,10 @@
 *.jpeg binary
 *.zip binary
 *.jar binary
+
+# GitHub language statistics (Linguist)
+# Count the Mule flow / MUnit / pom XML files (hidden by default as "data")
+*.xml linguist-detectable=true
+# Supporting tooling (mock services, generators, test harness) - not counted
+mock-services/** linguist-vendored
+tools/** linguist-vendored
